@@ -607,7 +607,7 @@ private fun settingsSearchEntries(
         page = SettingsPage.Usenet,
         key = "usenet",
         title = resolve(Res.string.compose_settings_page_usenet),
-        description = "Usenet · NNTP · Newznab · NZB · User-Agent · 7z",
+        description = "Usenet · NNTP · Newznab · NZB · User-Agent · 7z · Usenet info · statistics",
         icon = Icons.Rounded.Newspaper,
     )
     addPage(
@@ -871,6 +871,15 @@ private fun settingsSearchEntries(
             description = resolve(Res.string.gamepad_cursor_search_description),
             pageLabel = resolve(Res.string.compose_settings_page_keyboard_shortcuts),
             section = resolve(Res.string.gamepad_cursor_section),
+            icon = Icons.Rounded.Keyboard,
+        )
+        addRow(
+            page = SettingsPage.KeyboardShortcuts,
+            key = "controller-lights",
+            title = resolve(Res.string.gamepad_lights_section),
+            description = resolve(Res.string.gamepad_light_bar_description),
+            pageLabel = resolve(Res.string.compose_settings_page_keyboard_shortcuts),
+            section = resolve(Res.string.gamepad_lights_section),
             icon = Icons.Rounded.Keyboard,
         )
         addRow(
@@ -1622,6 +1631,15 @@ private fun settingsSearchEntries(
     )
     addRow(
         page = SettingsPage.Streams,
+        key = "stream-usenet-formatter",
+        title = resolve(Res.string.settings_stream_usenet_formatter_title),
+        description = resolve(Res.string.settings_stream_usenet_formatter_description),
+        pageLabel = streamsPage,
+        section = resolve(Res.string.settings_stream_display_section),
+        icon = Icons.Rounded.Style,
+    )
+    addRow(
+        page = SettingsPage.Streams,
         key = "stream-size-badges",
         title = resolve(Res.string.settings_stream_size_badges_title),
         description = resolve(Res.string.settings_stream_size_badges_description),
@@ -1745,12 +1763,6 @@ private fun settingsSearchEntries(
                 "loading-overlay",
                 resolve(Res.string.settings_playback_show_loading_overlay),
                 resolve(Res.string.settings_playback_show_loading_overlay_description),
-            ),
-            // fork:pip-browse
-            PlaybackSearchRow(
-                "pip-browse",
-                resolve(Res.string.settings_playback_pip_browse),
-                resolve(Res.string.settings_playback_pip_browse_description),
             ),
             PlaybackSearchRow(
                 "double-click",

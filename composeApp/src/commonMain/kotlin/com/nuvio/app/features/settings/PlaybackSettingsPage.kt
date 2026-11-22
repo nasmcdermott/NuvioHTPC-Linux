@@ -914,17 +914,7 @@ private fun PlaybackSettingsSection(
                     )
                     if (ExternalPlayerPlatform.supported) {
                     SettingsGroupDivider(isTablet = isTablet)
-                    // fork:pip-browse - PiP as a corner box over the app instead of a shrunken window.
                     if (isDesktop) {
-                        val browsePipEnabled by com.nuvio.app.features.player.PlayerBrowsePip.enabled.collectAsStateWithLifecycle()
-                        SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_playback_pip_browse),
-                            description = stringResource(Res.string.settings_playback_pip_browse_description),
-                            checked = browsePipEnabled,
-                            isTablet = isTablet,
-                            onCheckedChange = com.nuvio.app.features.player.PlayerBrowsePip::setEnabled,
-                        )
-                        SettingsGroupDivider(isTablet = isTablet)
                         val doubleClickAction by com.nuvio.app.features.player.PlayerDoubleClick.action.collectAsStateWithLifecycle()
                         SettingsChoiceRow(
                             title = stringResource(Res.string.settings_playback_double_click),
@@ -2911,17 +2901,15 @@ private fun PlaybackSettingsSection(
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.BingeMode),
                         onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayNextEpisodeEnabled,
                     )
-                    if (autoPlayPlayerSettings.streamAutoPlayNextEpisodeEnabled) {
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_playback_preload_next_episode),
-                            description = stringResource(Res.string.settings_playback_preload_next_episode_description),
-                            checked = autoPlayPlayerSettings.preloadNextEpisodeSources,
-                            isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("preload-next-episode")),
-                            onCheckedChange = PlayerSettingsRepository::setPreloadNextEpisodeSources,
-                        )
-                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_preload_next_episode),
+                        description = stringResource(Res.string.settings_playback_preload_next_episode_description),
+                        checked = autoPlayPlayerSettings.preloadNextEpisodeSources,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("preload-next-episode")),
+                        onCheckedChange = PlayerSettingsRepository::setPreloadNextEpisodeSources,
+                    )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_playback_prefer_binge_group),

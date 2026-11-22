@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import com.nuvio.app.core.ui.middleClickAutoscroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items as lazyItems
@@ -1000,7 +1001,7 @@ fun YouTubeTabScreen(
             else -> LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 300.dp),
                 state = gridState,
-                modifier = Modifier.fillMaxSize().gridColumnKeys(columnFocus) { videos.size },
+                modifier = Modifier.fillMaxSize().middleClickAutoscroll(gridState).gridColumnKeys(columnFocus) { videos.size },
                 // Room inside the grid's own clip for the focus zoom, so the first row's raised
                 // thumbnail is not cut by the grid's top edge (or the outer columns by its sides).
                 contentPadding = PaddingValues(start = 8.dp, top = 8.dp, end = 8.dp, bottom = 48.dp),
@@ -1424,7 +1425,7 @@ private fun PlaylistLibrary(onOpen: (YouTubePlaylist) -> Unit, returnTo: String?
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 260.dp),
                 state = gridState,
-                modifier = Modifier.fillMaxSize().gridColumnKeys(columnFocus) { state.playlists.size },
+                modifier = Modifier.fillMaxSize().middleClickAutoscroll(gridState).gridColumnKeys(columnFocus) { state.playlists.size },
                 contentPadding = PaddingValues(bottom = 48.dp),
                 horizontalArrangement = Arrangement.spacedBy(20.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
@@ -1473,7 +1474,7 @@ private fun ChannelPlaylists(onOpen: (YouTubePlaylist) -> Unit) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 260.dp),
                 state = gridState,
-                modifier = Modifier.fillMaxSize().gridColumnKeys(columnFocus) { state.playlists.size },
+                modifier = Modifier.fillMaxSize().middleClickAutoscroll(gridState).gridColumnKeys(columnFocus) { state.playlists.size },
                 contentPadding = PaddingValues(bottom = 48.dp),
                 horizontalArrangement = Arrangement.spacedBy(20.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
@@ -1795,7 +1796,7 @@ private fun SubscribedChannels(onOpen: (YouTubeChannel) -> Unit, returnTo: Strin
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 180.dp),
                 state = gridState,
-                modifier = Modifier.fillMaxSize().gridColumnKeys(columnFocus) { state.channels.size },
+                modifier = Modifier.fillMaxSize().middleClickAutoscroll(gridState).gridColumnKeys(columnFocus) { state.channels.size },
                 contentPadding = PaddingValues(bottom = 48.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),

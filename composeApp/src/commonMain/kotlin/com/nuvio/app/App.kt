@@ -5,6 +5,8 @@ import com.nuvio.app.core.ui.NuvioGlass
 import com.nuvio.app.core.ui.accentFill
 import com.nuvio.app.features.settings.settingsGlassGlyph
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
@@ -1455,9 +1457,24 @@ fun App() {
  */
 private fun NavController.navigateIfResumed(route: Any) {
     if (currentBackStackEntry?.lifecycle?.currentState == Lifecycle.State.RESUMED) {
+        if (route is DetailRoute) {
+            // launchSingleTop matches on the destination, not its arguments, so it would
+            // replace the current details page with the new one (More like this, cast
+            // credits) and Back would skip straight past it. Push a new details page
+            // instead, and only skip the one case singleTop guarded: the same title on
+            // top of itself, which registers duplicate shared-element keys and freezes
+            // the renderer.
+            val entry = currentBackStackEntry
+            if (entry != null && entry.destination.hasRoute<DetailRoute>()) {
+                val current = entry.toRoute<DetailRoute>()
+                if (current.type == route.type && current.id == route.id) return
+            }
+            navigate(route)
+            return
+        }
         // launchSingleTop avoids stacking a second instance of the same destination
-        // (e.g. the same details page) on top of itself, which would register
-        // duplicate shared-element transition keys and freeze the renderer.
+        // on top of itself, which would register duplicate shared-element transition
+        // keys and freeze the renderer.
         navigate(route) { launchSingleTop = true }
     }
 }
@@ -1701,6 +1718,8 @@ private fun MainAppContent(
                 if (navController.currentDestination?.hasRoute<PlayerRoute>() == true && detachSportsPlayerForBrowse()) {
                     return@collect
                 }
+                // A poster's long-press sheet closes first, rather than the page behind it going back.
+                if (PosterZoomOverlayCoordinator.requestClose()) return@collect
                 // fork:youtube-mini-player - over the tab the mini player draws, Back steps back inside the
                 // tab and never closes the video (the box's X does). From a YouTube tab video's page, Back
                 // goes to the mini player, as the player's own Back does (handleYouTubeMiniPlayerBack).
@@ -3929,7 +3948,7 @@ private fun MainAppContent(
                         Box(modifier = Modifier.fillMaxSize().background(Color.Black))
                         return@composable
                     }
-                    // fork:pip-browse - with the setting on, the player is drawn outside the graph
+                    // fork:pip-browse - the player is drawn outside the graph
                     // (PlayerHostLayer) so PiP can take this route away and leave it playing. Decided
                     // once per launch; coming back from the corner box picks the same player up.
                     val reattachingHostedPlayer = remember(route.launchId) { hostedPlayer?.launchId == route.launchId }
@@ -3938,8 +3957,7 @@ private fun MainAppContent(
                         when {
                             reattachingHostedPlayer -> hostedPlayer
                             openInBox -> com.nuvio.app.features.player.HostedPlayer(route.launchId).also { it.detached = true }
-                            (launch.sportsEventId != null || com.nuvio.app.features.player.PlayerBrowsePip.enabled.value) &&
-                                launch.autoPlayMode != PlayerAutoPlayMode.Playlist ->
+                            launch.autoPlayMode != PlayerAutoPlayMode.Playlist ->
                                 com.nuvio.app.features.player.HostedPlayer(route.launchId)
                             else -> null
                         }
@@ -6264,6 +6282,22 @@ private fun MainAppContent(
                                             activeIdentityKey = null,
                                             triedIdentityKeys = pickerFailoverTried,
                                             excludeUsenet = com.nuvio.app.features.usenet.usenetUnavailable(error),
+                                            // The same ranking the player's own failover uses. Without it the
+                                            // walk took the list's order, where Local library comes first, so a
+                                            // release that failed to open fell back to a local file scored -120
+                                            // ahead of the next best Usenet or addon source (Nov 20).
+                                            preferredAudioLanguages = com.nuvio.app.features.player.resolvePreferredAudioLanguageTargets(
+                                                preferredAudioLanguage = playerSettings.preferredAudioLanguage,
+                                                secondaryPreferredAudioLanguage = playerSettings.secondaryPreferredAudioLanguage,
+                                                deviceLanguages = com.nuvio.app.features.player.DeviceLanguagePreferences.preferredLanguageCodes(),
+                                                originalLanguage = OriginalLanguageCache.languageFor(launch.parentMetaId),
+                                            ),
+                                            scoreProfile = com.nuvio.app.features.streams.StreamScoreRepository.profile,
+                                            scoreContext = com.nuvio.app.features.streams.StreamScoreContexts.forPlayback(
+                                                isEpisode = streamLookupEpisodeNumber != null,
+                                                contentId = launch.parentMetaId,
+                                                contentType = launch.type,
+                                            ),
                                         )
                                     } else {
                                         null
@@ -7629,15 +7663,28 @@ private fun DesktopHoverSidebar(
                 )
             }
 
-            if (profileStackVisible) {
+            AnimatedVisibility(
+                visible = profileStackVisible,
+                enter = fadeIn(tween(140)) + scaleIn(
+                    animationSpec = tween(150, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                    initialScale = 0.94f,
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f),
+                ),
+                exit = fadeOut(tween(110)) + androidx.compose.animation.scaleOut(
+                    animationSpec = tween(110),
+                    targetScale = 0.94f,
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f),
+                ),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = profileTopPadding + 58.dp)
+                    .width(DesktopSidebarExpandedContentWidth),
+            ) {
                 SidebarProfileSwitcherStack(
                     onProfileSelected = onProfileSelected,
                     onAddProfileRequested = onAddProfileRequested,
                     onDismissRequest = { profileStackVisible = false },
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = profileTopPadding + 58.dp)
-                        .width(DesktopSidebarExpandedContentWidth),
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
 
@@ -7944,14 +7991,39 @@ private fun DesktopSidebarItem(
     icon: @Composable (Color) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    val hoverSource = remember { MutableInteractionSource() }
-    val hovered by hoverSource.collectIsHoveredAsState()
-    val contentColor = if (selected) tokens.colors.textPrimary else tokens.colors.textMuted
-    val iconColor = if (selected) tokens.colors.onAccent else contentColor
-    // A subtle zoom while the row holds keyboard/D-pad focus, and a smaller resting zoom on the
-    // page that is open so it still reads as chosen when the keys are in the page content. The icon
-    // slot is fixed and the glyph is smaller than it, so the scale stays inside the slot: the
-    // column never shifts and neighbouring rows are never overlapped.
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val contentColor by animateColorAsState(
+        targetValue = when {
+            selected -> tokens.colors.textPrimary
+            hovered -> tokens.colors.textPrimary.copy(alpha = 0.9f)
+            else -> tokens.colors.textMuted
+        },
+        animationSpec = tween(150),
+        label = "desktop_sidebar_content",
+    )
+    val iconColor by animateColorAsState(
+        targetValue = if (selected) tokens.colors.onAccent else contentColor,
+        animationSpec = tween(150),
+        label = "desktop_sidebar_icon",
+    )
+    val pillProgress by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMedium,
+        ),
+        label = "desktop_sidebar_pill",
+    )
+    val hoverAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (hovered && !selected) 1f else 0f,
+        animationSpec = tween(130),
+        label = "desktop_sidebar_hover",
+    )
+    // A subtle zoom while the row holds keyboard/D-pad focus or the pointer, and a smaller resting
+    // zoom on the page that is open so it still reads as chosen when the keys are in the page
+    // content. The icon slot is fixed and the glyph is smaller than it, so the scale stays inside
+    // the slot: the column never shifts and neighbouring rows are never overlapped.
     val sidebarFocused = LocalDesktopSidebarFocused.current
     val focusZoomPercent by ThemeSettingsRepository.desktopFocusZoomPercent.collectAsStateWithLifecycle()
     val iconFocusScale by animateFloatAsState(
@@ -7979,8 +8051,12 @@ private fun DesktopSidebarItem(
                     Modifier
                 },
             )
-            .hoverable(hoverSource)
-            .clickable(onClick = onClick),
+            .hoverable(interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
         color = Color.Transparent,
         shape = RoundedCornerShape(16.dp),
     ) {
@@ -7997,16 +8073,33 @@ private fun DesktopSidebarItem(
                 ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Surface(
-                    modifier = Modifier
-                        .size(DesktopSidebarIconSlotSize)
-                        .background(
-                            if (selected) tokens.colors.accentFill else SolidColor(Color.Transparent),
-                            RoundedCornerShape(14.dp),
-                        ),
-                    color = Color.Transparent,
-                    shape = RoundedCornerShape(14.dp),
+                Box(
+                    modifier = Modifier.size(DesktopSidebarIconSlotSize),
+                    contentAlignment = Alignment.Center,
                 ) {
+                    if (hoverAlpha > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Color.White.copy(alpha = 0.08f * hoverAlpha),
+                                    RoundedCornerShape(14.dp),
+                                ),
+                        )
+                    }
+                    if (pillProgress > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    alpha = pillProgress
+                                    val s = 0.84f + 0.16f * pillProgress
+                                    scaleX = s
+                                    scaleY = s
+                                }
+                                .background(tokens.colors.accentFill, RoundedCornerShape(14.dp)),
+                        )
+                    }
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -8703,14 +8796,19 @@ val youTubeMiniPlayerShown = youTubeBrowsing
                     transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f),
                 ),
             ) {
-                // Its own glass panel under the bar, same night glass, edge and shadow as the pill.
+                // Uniform night glass matching the nav bar (no shadowElevation cutout through
+                // translucent glass, which darkened the outer rim while leaving the middle lighter).
+                val searchPanelShape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
+                val searchPanelColor = NuvioGlass.night(tokens.colors.background, tokens.colors.accent).copy(alpha = 0.94f)
                 Surface(
-                    color = floatingSearchSurfaceColor,
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                    color = searchPanelColor,
+                    shape = searchPanelShape,
                     tonalElevation = 0.dp,
-                    shadowElevation = tokens.elevation.overlay,
-                    border = BorderStroke(1.dp, dividerColor),
-                    modifier = Modifier.padding(top = SearchPanelGap).width(topBarWidth),
+                    shadowElevation = 0.dp,
+                    modifier = Modifier
+                        .padding(top = SearchPanelGap)
+                        .width(topBarWidth)
+                        .smoothBorder(1.dp, dividerColor, searchPanelShape),
                 ) {
                     val shownEntries = panelMusic?.let { music -> remember(music.items) { music.items.map(::SearchPickerEntry) } }
                         ?: pickerEntries

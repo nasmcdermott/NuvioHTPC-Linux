@@ -1205,9 +1205,9 @@ private fun ContinueWatchingCard(
             .width(cardMetrics.width)
             .aspectRatio(PosterLandscapeAspectRatio)
             .nuvioPosterHighlight(cardMetrics.cornerRadius, artworkUrl = imageUrl)
+            .nuvioCardDepth(RoundedCornerShape(cardMetrics.cornerRadius), NuvioCardDepthSurface.ContinueWatching)
             .clip(RoundedCornerShape(cardMetrics.cornerRadius))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .nuvioCardDepth(RoundedCornerShape(cardMetrics.cornerRadius), NuvioCardDepthSurface.ContinueWatching)
             .posterCardClickable(
                 onClick = onClick,
                 onLongClick = onLongClick,
@@ -1530,9 +1530,9 @@ private fun ContinueWatchingPosterCard(
                 .fillMaxWidth()
                 .height(cardHeight)
                 .nuvioPosterHighlight(posterCardStyle.cornerRadiusDp.dp, artworkUrl = posterArtworkUrl)
+                .nuvioCardDepth(RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp), NuvioCardDepthSurface.ContinueWatching)
                 .clip(RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .nuvioCardDepth(RoundedCornerShape(posterCardStyle.cornerRadiusDp.dp), NuvioCardDepthSurface.ContinueWatching)
                 .posterCardClickable(
                     onClick = onClick,
                     onLongClick = onLongClick,

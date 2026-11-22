@@ -421,11 +421,18 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     stream: StreamItem,
     episode: MetaVideo,
     sourceIdentityKey: String? = stream.playerSourceIdentityKey(),
+    // Next-episode autoplay's: a Usenet release that cannot be opened hands on to its next pick
+    // instead of leaving the next-episode card up with nothing loading.
+    onPreparationFailed: (suspend (Throwable) -> Unit)? = null,
 ) {
     val seasonNumber = episode.playbackSeasonNumber()
     val episodeNumber = episode.playbackEpisodeNumber()
-    if (resolveServerForPlayer(stream) { switchToEpisodeStream(it, episode, sourceIdentityKey) }) return
-    if (resolveUsenetForPlayer(stream, seasonNumber, episodeNumber) { switchToEpisodeStream(it, episode, sourceIdentityKey) }) return
+    if (resolveServerForPlayer(stream) { switchToEpisodeStream(it, episode, sourceIdentityKey, onPreparationFailed) }) return
+    if (
+        resolveUsenetForPlayer(stream, seasonNumber, episodeNumber, onFailed = onPreparationFailed) {
+            switchToEpisodeStream(it, episode, sourceIdentityKey)
+        }
+    ) return
     if (resolveYouTubeForPlayer(stream) { switchToEpisodeStream(it, episode, sourceIdentityKey) }) return
     if (
         resolveDebridForPlayer(
@@ -685,6 +692,7 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
                     excludeUsenet = failoverSkipsUsenet,
                 )
 
+            val waitForAllProviders = StreamScoreRepository.profile.appliesToFailover()
             var next: StreamItem? = null
             var poll = 0
             while (poll < STREAM_FAILOVER_POLL_COUNT && next == null) {
@@ -694,10 +702,16 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
                 val activeKey = activeSourceIdentityKey
                 val activeSourceLoaded = activeKey == null ||
                     streams.any { it.playerSourceIdentityKey() == activeKey }
-                // An early provider result can appear before the group containing the current
-                // source. Wait for that match (or load completion) so "next" is based on the
-                // Sources panel order instead of accidentally jumping back to its first item.
-                next = if (activeSourceLoaded || !state.isAnyLoading) pickNext(streams) else null
+                // When scoring is active, the highest-ranked stream can live in any provider
+                // (e.g. Built-in Usenet finishing slightly after the failed addon), so wait until
+                // all providers finish (or the poll window expires) before picking. Otherwise wait
+                // until the failed source's own group arrives so "next" follows panel order.
+                val readyToPick = if (waitForAllProviders) {
+                    !state.isAnyLoading
+                } else {
+                    activeSourceLoaded || !state.isAnyLoading
+                }
+                next = if (readyToPick) pickNext(streams) else null
                 if (next != null || state.emptyStateReason != null || (!state.isAnyLoading && state.groups.isNotEmpty())) {
                     break
                 }
@@ -1118,7 +1132,9 @@ internal fun PlayerScreenRuntime.playNextEpisode() {
         currentStreamBingeGroup = currentStreamBingeGroup,
         currentStream = activeStream,
         onDownloadedEpisodeSelected = { item, episode -> switchToDownloadedEpisode(item, episode) },
-        onEpisodeStreamSelected = { stream, episode -> switchToEpisodeStream(stream, episode) },
+        onEpisodeStreamSelected = { stream, episode, onFailed ->
+            switchToEpisodeStream(stream, episode, onPreparationFailed = onFailed)
+        },
         onManualSelectionRequired = { nextVideo ->
             // Auto-select failed: the manual stream list is now the feedback, so drop the card.
             manualEpisodeSwitchInfo = null
@@ -1175,7 +1191,9 @@ internal fun PlayerScreenRuntime.autoPlaySelectedEpisode(episode: MetaVideo) {
         currentStreamBingeGroup = currentStreamBingeGroup,
         currentStream = activeStream,
         onDownloadedEpisodeSelected = { item, video -> switchToDownloadedEpisode(item, video) },
-        onEpisodeStreamSelected = { stream, video -> switchToEpisodeStream(stream, video) },
+        onEpisodeStreamSelected = { stream, video, onFailed ->
+            switchToEpisodeStream(stream, video, onPreparationFailed = onFailed)
+        },
         onManualSelectionRequired = { video ->
             // Auto-select failed: the manual stream list is now the feedback, so drop the card.
             manualEpisodeSwitchInfo = null
