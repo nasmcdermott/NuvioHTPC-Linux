@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -136,12 +137,23 @@ private fun SportsDayPill(
     }
     val borderWidth = if (interaction.focused) 2.dp else tokens.borders.hairline
     var centerX by remember { mutableStateOf(0f) }
+    var focused by remember { mutableStateOf(false) }
+    // The keys can land on a day in the same frame the strip composes it, before it has been
+    // placed: the first report was then x=0, so Up from a day on the right asked the row above for
+    // the control at the far left. The position is reported again as soon as it is known, and every
+    // time the strip scrolls under the keys.
+    LaunchedEffect(centerX, focused) {
+        if (focused && centerX > 0f) onFocusedWindowX(centerX)
+    }
 
     Column(
         modifier = Modifier
             .widthIn(min = 84.dp)
             .onGloballyPositioned { centerX = it.boundsInWindow().center.x }
-            .onFocusChanged { if (it.isFocused) onFocusedWindowX(centerX) }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused && centerX > 0f) onFocusedWindowX(centerX)
+            }
             .sportsInteractive(
                 state = interaction,
                 focusRequester = focusRequester,

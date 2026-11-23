@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -43,6 +44,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -117,6 +119,28 @@ internal fun SportsScreen(
     com.nuvio.app.core.ui.BarPageEntry { headerBandFocus.requestFocusLogged() }
     val modeGamesFocus = remember { FocusRequester() }
     val chipsBandFocus = remember { FocusRequester() }
+    // Where each chip of the sport band is drawn, and what holds it. The calendar steps up by the
+    // day's own x, so the control being left and the one being entered sit over each other instead
+    // of every day coming up on the first chip: chip 0 is "All", 1..n are the sports, and the last
+    // one is "Change Leagues".
+    val chipsChipFocus = remember { mutableMapOf<Int, FocusRequester>() }
+    val chipsChipBounds = remember { mutableMapOf<Int, ClosedFloatingPointRange<Float>>() }
+    var focusedChipIndex by remember { mutableStateOf(0) }
+    fun chipFocuser(index: Int): FocusRequester = chipsChipFocus.getOrPut(index) { FocusRequester() }
+    fun chipBoundsOf(index: Int): Modifier = Modifier
+        .onGloballyPositioned { coords ->
+            val bounds = coords.boundsInWindow()
+            chipsChipBounds[index] = bounds.left.toFloat()..bounds.right.toFloat()
+        }
+        .onFocusChanged { if (it.isFocused) focusedChipIndex = index }
+    // The chip whose x the keys would come up under: the one drawn over the day, else the nearest.
+    fun pickSportBandAt(windowX: Float?): Boolean {
+        val index = sportsBandChipAt(chipsChipBounds, windowX) ?: return false
+        // The band is entered first: asking a chip from outside the row lets the band's
+        // focusRestorer redirect the request back to the chip that last had the keys, which is how
+        // every day used to come up on the same chip whatever x it came from.
+        return com.nuvio.app.core.ui.requestFocusInsideGroup(chipsBandFocus, chipFocuser(index))
+    }
     val dateBandFocus = remember { FocusRequester() }
     val tablesBandFocus = remember { FocusRequester() }
     val detailBandFocus = remember { FocusRequester() }
@@ -276,22 +300,38 @@ internal fun SportsScreen(
                     when {
                         openGame != null && !tablesMode -> detailBandFocus.requestFocusLogged()
                         tablesMode -> tablesBandFocus.requestFocusLogged()
-                        !mySportsOnly -> chipsBandFocus.requestFocusLogged()
-                        heroGame != null -> heroFocus.requestFocusLogged()
-                        else -> dateBandFocus.requestFocusLogged()
+                        // The sport band is drawn under the header in both modes, so it is the next
+                        // rung down whether My Sports is on or not.
+                        else -> chipsBandFocus.requestFocusLogged()
                     }
                 },
             )
 
-            if (!tablesMode && openGame == null && !mySportsOnly) {
+            // Drawn in both modes: My Sports filters by sport exactly as All Events does, so the
+            // row has to exist there too - and, with no band in My Sports, Up from the calendar had
+            // nothing above it and went to the app's top navigation bar.
+            if (!tablesMode && openGame == null) {
                 SportsChooseLeaguesBand(
                     sports = sports,
                     selected = sport,
                     leagueCount = visibleLeagues.size,
                     bandRequester = chipsBandFocus,
+                    chipFocus = ::chipFocuser,
+                    chipBounds = ::chipBoundsOf,
                     onSelect = { selectedSport = it?.name },
                     onOpenPicker = { pickerOpen = true },
-                    onUp = { headerBandFocus.requestFocusLogged() },
+                    // Up from a chip asks the row above for the control over that chip, the same
+                    // way the calendar asks this row: the bar's icons and the page's top-right
+                    // pills are reached by where the keys are, not by which row they are in.
+                    onUp = {
+                        val windowX = chipsChipBounds[focusedChipIndex]?.let { (it.start + it.endInclusive) / 2f }
+                        (windowX != null &&
+                            (
+                                RootNavFocus.enterHorizontalEntry(windowX) ||
+                                    RootNavFocus.enterTopBarNear(windowX)
+                                )) ||
+                            headerBandFocus.requestFocusLogged()
+                    },
                     onDown = { dateBandFocus.requestFocusLogged() },
                 )
             }
@@ -302,23 +342,19 @@ internal fun SportsScreen(
                     selected = selectedDay,
                     bandRequester = dateBandFocus,
                     onSelect = { selectedDay = it; openGameId = null },
-                    // Up asks the bar by where the day is, the way the Settings rail asks the
-                    // sidebar for its nearest row: a day on the right reaches the right of the bar
-                    // (and the page's top-right buttons from there), a day on the left the icon
-                    // nearest it. With no bar drawn it keeps the old ladder — the sport chips, or
-                    // the header band on the My Sports layout.
-                    onUp = { focusedWindowX ->
-                        (focusedWindowX != null &&
-                            (
-                                RootNavFocus.enterHorizontalEntry(focusedWindowX) ||
-                                    RootNavFocus.enterTopBarNear(focusedWindowX)
-                                )
-                            ) ||
-                            if (!mySportsOnly) {
-                                chipsBandFocus.requestFocusLogged()
-                            } else {
-                                headerBandFocus.requestFocusLogged()
-                            }
+                    // Up steps to the sport band drawn directly above the strip, at the day's own
+                    // x: a day on the left comes up on the left-hand chips and a day on the right
+                    // on the right-hand ones, so the button being left and the one being entered
+                    // line up. Only when the band has nothing drawn there does it go on to the
+                    // header row and the bar, which is how the top-right pills are still reached.
+                    onUp = { windowX ->
+                        pickSportBandAt(windowX) ||
+                            (windowX != null &&
+                                (
+                                    RootNavFocus.enterHorizontalEntry(windowX) ||
+                                        RootNavFocus.enterTopBarNear(windowX)
+                                    )) ||
+                            headerBandFocus.requestFocusLogged()
                     },
                     onDown = {
                         if (mySportsOnly && heroGame != null) {
@@ -628,19 +664,22 @@ private fun SportsChooseLeaguesBand(
     selected: Sport?,
     leagueCount: Int,
     bandRequester: FocusRequester,
+    /** Chip 0 is "All", 1..n the sports, and the last one "Change Leagues". */
+    chipFocus: (index: Int) -> FocusRequester,
+    chipBounds: (index: Int) -> Modifier,
     onSelect: (Sport?) -> Unit,
     onOpenPicker: () -> Unit,
+    /** Up asks the row above for the control drawn over the chip that holds the keys. */
     onUp: () -> Boolean,
     onDown: () -> Boolean,
 ) {
     val tokens = MaterialTheme.nuvio
-    val firstChipFocus = remember { FocusRequester() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .sportsHorizontalBand(
                 bandRequester = bandRequester,
-                fallbackRequester = firstChipFocus,
+                fallbackRequester = chipFocus(0),
                 onUp = onUp,
                 onDown = onDown,
             ),
@@ -663,21 +702,48 @@ private fun SportsChooseLeaguesBand(
                 SportsChip(
                     label = "All",
                     selected = selected == null,
-                    focusRequester = firstChipFocus,
+                    focusRequester = chipFocus(0),
+                    modifier = chipBounds(0),
                     onClick = { onSelect(null) },
                 )
             }
-            items(sports, key = { it.name }) { sport ->
+            itemsIndexed(sports, key = { _, sport -> sport.name }) { position, sport ->
                 SportsChip(
                     label = sport.label,
                     selected = sport == selected,
+                    focusRequester = chipFocus(position + 1),
+                    modifier = chipBounds(position + 1),
                     onClick = { onSelect(if (sport == selected) null else sport) },
                     icon = sportIcon(sport),
                 )
             }
         }
-        SportsChip(label = "Change Leagues ›", selected = false, onClick = onOpenPicker)
+        SportsChip(
+            label = "Change Leagues ›",
+            selected = false,
+            focusRequester = chipFocus(sports.size + 1),
+            modifier = chipBounds(sports.size + 1),
+            onClick = onOpenPicker,
+        )
     }
+}
+
+/**
+ * The chip of the sport band that a control at [windowX] comes up on: the one drawn over it, else
+ * the one nearest it, or null when the band has not been placed yet or its position is unknown.
+ *
+ * Kept apart from the composable so the positional rule - the button being left and the one being
+ * entered sitting over each other, whatever the window size - can be checked without a layout.
+ */
+internal fun sportsBandChipAt(
+    bounds: Map<Int, ClosedFloatingPointRange<Float>>,
+    windowX: Float?,
+): Int? {
+    if (windowX == null || bounds.isEmpty()) return null
+    bounds.entries.firstOrNull { it.value.contains(windowX) }?.let { return it.key }
+    return bounds.entries.minByOrNull { entry ->
+        kotlin.math.abs((entry.value.start + entry.value.endInclusive) / 2f - windowX)
+    }?.key
 }
 
 /** How many of the page's games are live right now, for the All Events chip's "· 6 live" tag. */

@@ -36,7 +36,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
@@ -48,8 +53,12 @@ import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioModalDialog
 import com.nuvio.app.core.ui.NuvioTextField
+import com.nuvio.app.core.ui.navigationKey
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.smoothBorder
+import com.nuvio.app.features.input.consumeOnScreenKeyboardEscapeDismissal
+import com.nuvio.app.features.input.dismissOnScreenKeyboard
 
 /**
  * Follow teams and leagues.
@@ -114,15 +123,9 @@ internal fun SportsFollowPicker(
             )
         },
     ) {
-        NuvioTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = "Search teams and leagues",
-        )
-
         // Flattened into rows before the list: LazyColumn items cannot nest, and a league's teams
-        // are part of the same scroll rather than a sub-list.
+        // are part of the same scroll rather than a sub-list. Built before the search box because
+        // the box's keys need to know what there is to move to.
         val rows = buildList<PickerRow> {
             matchingLeagues.forEach { league ->
                 val followed = SportsFollows.isLeagueFollowed(settings, league.id)
@@ -174,6 +177,48 @@ internal fun SportsFollowPicker(
         val focusRowForLazyIndex = remember(focusableLazyIndices) {
             focusableLazyIndices.withIndex().associate { it.value to it.index }
         }
+        val searchFocus = remember { FocusRequester() }
+
+        /** Moves the keys into the results; false when there is nothing to move to. */
+        fun focusResultRow(row: Int): Boolean {
+            if (focusableLazyIndices.isEmpty()) return false
+            val safeRow = row.coerceIn(0, focusableLazyIndices.lastIndex)
+            return listFocus.focusRow(safeRow, focusableLazyIndices[safeRow], focusableLazyIndices.size)
+        }
+
+        NuvioTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .onPreviewKeyEvent { event ->
+                    val isDown = event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown
+                    // Only Escape counts as Back in here: Backspace still deletes characters while
+                    // the box has them, and the dialog's own Back declines while a field holds the
+                    // keys (see dismissOnBackKey), so Escape is the one press that would otherwise
+                    // be swallowed with nothing happening.
+                    val target = searchBoxFocusTarget(
+                        isDown = isDown,
+                        isBack = event.navigationKey() == Key.Escape,
+                        hasResults = focusableLazyIndices.isNotEmpty(),
+                        lastRow = listFocus.focusedRowIndex,
+                    ) ?: return@onPreviewKeyEvent false
+                    if (isDown) return@onPreviewKeyEvent focusResultRow(target)
+                    // Back: the on-screen keyboard goes first, then the results it pulled up.
+                    if (event.type == KeyEventType.KeyUp) {
+                        when {
+                            consumeOnScreenKeyboardEscapeDismissal() -> Unit
+                            dismissOnScreenKeyboard() -> Unit
+                            else -> focusResultRow(target)
+                        }
+                    }
+                    // Both halves are eaten while there are results, so the dialog's own Back does
+                    // not close the picker on the same press. With none, Back still closes it.
+                    true
+                },
+            placeholder = "Search teams and leagues",
+            focusRequester = searchFocus,
+        )
 
         LazyColumn(
             state = listState,
@@ -185,7 +230,8 @@ internal fun SportsFollowPicker(
                         event = event,
                         rowCount = focusableLazyIndices.size,
                         lazyIndexOfRow = { row -> focusableLazyIndices.getOrElse(row) { 0 } },
-                        onUpFromFirst = { false },
+                        // Up from the first result returns to the box that produced it.
+                        onUpFromFirst = { searchFocus.requestFocusLogged() },
                     )
                 },
             verticalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
@@ -235,6 +281,28 @@ internal fun SportsFollowPicker(
             )
         }
     }
+}
+
+/**
+ * Where a key pressed inside the search box sends the keys, as a result row, or null when the press
+ * is not the box's to answer.
+ *
+ * The box must not be a trap: Compose keeps the raw arrow keys for a text field's cursor, so nothing
+ * outside it will move the focus, and Back inside a modal is the one press that quietly does nothing
+ * at all (the dialog declines it while a field holds the keys). Down therefore always opens the
+ * **first** result, and Back returns to the row the viewer last had - the results it pulled up -
+ * rather than closing the picker.
+ */
+internal fun searchBoxFocusTarget(
+    isDown: Boolean,
+    isBack: Boolean,
+    hasResults: Boolean,
+    lastRow: Int,
+): Int? = when {
+    !hasResults -> null
+    isDown -> 0
+    isBack -> lastRow.coerceAtLeast(0)
+    else -> null
 }
 
 /** One line of the picker: a league header, one of its teams, or a note under either. */
