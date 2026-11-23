@@ -28,6 +28,7 @@ The primary goal is to add first-class Linux support while keeping the fork as c
 8. Before changing shared code, determine whether the change can instead live behind a platform abstraction.
 9. Every significant change must remain easy to merge with future updates from UmbraProjects/windows-tv-adaptive.
 10. Do not commit generated build output, secrets, credentials, local.properties, caches, or machine-specific paths.
+11. Navigation is positional and owned by one router. Extend `core/ui/` rather than bypassing it; see Navigation.
 
 ## Linux target
 
@@ -70,6 +71,46 @@ The final Linux port should support, where technically possible:
 Linux-specific features may use Linux-native implementations when Windows APIs are not applicable.
 
 Do not silently replace the integrated player with an external mpv process as the final implementation.
+
+## Navigation
+
+Movement is **positional**, and every region owns the keys it can see. A control enters the region
+beside or above it at the neighbour drawn over it, by window coordinate — not by a fixed "next row up"
+ladder. Two instances, and the pattern to copy: Settings' category rail asks the side bar for the row
+nearest its height (`enterSidebarNear`); the Sports calendar asks the header row, then the top bar, for
+the control over the day (`enterHorizontalEntry`, then `enterTopBarNear`). A day under a chip or a pill
+reaches that button; a day under the middle, where the row is empty, reaches the bar icon there.
+
+1. **The handoff is two-way.** The bar's ends step into the page's edge controls, and that control's
+   Left/Right steps back into the same end of the bar (gear with Follow Teams & Leagues and Hide
+   watched, Home with Tables and the tab's search icon). A one-way handoff strands whatever sits
+   between the bar and the control it names: the corner player's expand and close buttons were
+   unreachable that way.
+2. **Aim at the group's leftmost control, and enter a focus group before the control inside it**
+   (`requestFocusInsideGroup`). A `focusRestorer` group restores over a direct request, and aiming at a
+   later control silently skips the ones before it. Log a handoff that does not land: a silent no-op
+   reads like a dead key.
+3. **Never leave Back without a destination.** The corner-box player hands Back to the app around it
+   (never to its own HUD, which hides an invisible HUD and swallows the key); a return to the tabs
+   requests a settle and the page asks for focus with a bounded retry; the window fallback replays Back
+   and Escape as well as arrows and Enter, and must resolve the window the Wayland way, where AWT often
+   reports no focused window at all. (Locked by `FocusFallbackKeysTest`, `LinuxPlayerEscapeTest`.)
+4. **Every page that draws controls on the bar's line registers for it:** `BarSideFocusHandoff` when it
+   draws controls beside the bar's ends, `BarPageEntry` when it can be returned to from a pushed route,
+   `keyLayer` for its focus root. Whichever apply — not more, never fewer.
+5. **Keys go through the funnels**: `navigationKey()`, `navAction()`, `arrowFocusDirection()`. A raw
+   `event.key == Key.X` comparison is a ratchet failure (`NavigationActionRatchetTest`), because rebound
+   and pad keys arrive as the same action, not the same key.
+6. **Extend the router; do not add a second one.** New movement behaviour belongs in `core/ui/` and
+   registers with `RootNavFocus`, so every page inherits it. A page-local key walk that duplicates the
+   router is how one bug gets fixed three times.
+7. **A navigation change ships with its guard**: an offscreen Compose test that fails when the change is
+   reverted (mutation-verified), and a green `NavigationActionRatchetTest`. Live window runs need
+   explicit permission, as in Git and changes.
+
+Owners: `core/ui/KeyLayers.kt` (router, settle), `core/ui/NavFocus.kt` (regions, entries, handoffs),
+`core/ui/NavAction.kt` and `ArrowKeyFocusNavigation.kt` (key funnels), `features/navbar/NavBarSlots.kt`
+(slots and position to slot).
 
 ## Development order
 
