@@ -32,6 +32,7 @@ redistribution remains blocked by the documented source/rights/availability revi
 * QR login added
 * Tweaked hero UI, player UI
 * Mouse, keyboard or controller friendly TV Mode with full-screen navigation, adaptive hero, row-jump navigation, cast and award information. This applies across all panels, not just home.
+* Comprehensive controller and keyboard navigation support
 * Game Mode for browsing and launching your game library alongside your media.
 * IPTV from your own provider (Xtream Codes, Stalker portal or M3U) with a programme guide, favourites and an in-player channel switcher, based on Slokker's GoatTV (used with Permission).
 * Automatic control of smart lights based on playback state for a theater like experience.
@@ -39,6 +40,7 @@ redistribution remains blocked by the documented source/rights/availability revi
 * Audio pass-through features for a receiver.
 * Casting to another device, if the TV is busy you can cast to your phone or laptop.
 * Nuvio Remote, an Android app that drives Nuvio from your phone over Wi-Fi: touchpad or D-pad, now playing with lock-screen controls, Continue watching, the library and seasons, search by voice, picking the source, the music queue and loud lyrics, a dark mode for the cinema, and Wake-on-LAN. Pair by scanning a QR code in Settings. See [remote-android/README.md](remote-android/README.md).
+* A brand new sports page with 27 leagues, live scores, play by plays, tables, live IPTV/Nuvio addon integration.
 
 # Discovery & Browsing
 
