@@ -28,7 +28,6 @@ redistribution remains blocked by the documented source/rights/availability revi
 
 # Home Theatre features
 
-* Changed input handling and app navigation for out the box experience with remote/keyboard/gamepad
 * QR login added
 * Tweaked hero UI, player UI
 * Mouse, keyboard or controller friendly TV Mode with full-screen navigation, adaptive hero, row-jump navigation, cast and award information. This applies across all panels, not just home.
