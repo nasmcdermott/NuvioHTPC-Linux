@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.focus.FocusRequester
@@ -52,12 +55,21 @@ class NavFocusLeaveTest {
             LaunchedEffect(sidebarRequester) {
                 RootNavFocus.enterRequests.collect { sidebarRequester.requestFocus() }
             }
+            // The app's sidebar answers the height-carrying request too: a content control that
+            // tracked its height (a chip, a card) leaves one remembered, and the plain request is
+            // not what arrives then.
+            LaunchedEffect(sidebarRequester) {
+                RootNavFocus.positionEnterRequests.collect { sidebarRequester.requestFocus() }
+            }
             Box(
                 Modifier
                     .tabSidebarHandoff(
                         homeSelected = { false },
                         sidebarAvailable = { true },
                         onBack = { false },
+                        // This scenario is the sidebar's: a bar drawn by another test's leftover
+                        // global (the default reads anyTopBarDrawn) would take Back instead.
+                        topBarAvailable = { false },
                     ),
             ) {
                 Row {
@@ -356,5 +368,20 @@ class NavFocusLeaveTest {
         waitForIdle()
         assertTrue(pageFocused, "focus stays where the page put it")
         assertFalse(barFocused)
+    }
+
+    @Test
+    fun theBarSideHandoffStopsAnsweringWhenThePageDisablesIt() = runComposeUiTest {
+        var enabled by mutableStateOf(true)
+        setContent {
+            BarSideFocusHandoff(left = { true }, right = { false }, enabled = enabled)
+        }
+        waitForIdle()
+        assertTrue(RootNavFocus.focusBarSide(left = true))
+        assertFalse(RootNavFocus.focusBarSide(left = false))
+
+        runOnIdle { enabled = false }
+        waitForIdle()
+        assertFalse(RootNavFocus.focusBarSide(left = true), "a disabled page must stop answering for the bar")
     }
 }

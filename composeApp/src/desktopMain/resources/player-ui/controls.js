@@ -10779,7 +10779,7 @@ document.addEventListener("mousedown", event => {
 // Keep the existing focused-WebView order for Windows/macOS; Linux must dismiss an
 // open panel even if a playback error arrived underneath it.
 function handlePlayerEscape(linux = false) {
-  if (styleDropdownOpen) { closeFieldStyleDropdown(); return; }
+  if (styleDropdownOpen) { closeStyleDropdown(); return; }
   if (subtitleHexField) { closeSubtitleHexPrompt(); return; }
   if (contextMenuOpen) { closeContextMenu(); return; }
   if (actionOverflowOpen) { setActionOverflowOpen(false); return; }

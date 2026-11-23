@@ -1,10 +1,12 @@
 package com.nuvio.app.core.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.composed
 import androidx.compose.ui.focus.onFocusChanged
@@ -124,11 +126,88 @@ object RootNavFocus {
         barSideHandoffOwners.remove(owner)
     }
 
-    /** Steps the keys out of the bar's [left] or right end into the page's controls beside it. */
-    fun focusBarSide(left: Boolean): Boolean {
-        val handoff = barSideHandoffOwners.values.lastOrNull() ?: return false
-        return runCatching { if (left) handoff.left() else handoff.right() }.getOrDefault(false)
+    /**
+     * A page's own way in, registered while it is the page on screen: what [BarPageEntry] adds.
+     *
+     * [restoreContentFocus] alone cannot promise the keys end up in the page — the control the page
+     * had may be gone (a reload, a row that went away) or the bar may have been reached by pointer —
+     * and the spatial fallback can then find nothing below the bar and drop focus altogether. The
+     * page's own entry is what makes leaving the bar always land in the page.
+     */
+    private val pageEntries = mutableMapOf<Any, () -> Boolean>()
+
+    internal fun registerPageEntry(owner: Any, entry: () -> Boolean) {
+        pageEntries[owner] = entry
     }
+
+    internal fun unregisterPageEntry(owner: Any) {
+        pageEntries.remove(owner)
+    }
+
+    /**
+     * A page's own row of controls across the top — the Sports header's chips on the left and its
+     * pills on the right — answering by position, so a control below can reach the one drawn over it
+     * (Up in the Sports calendar asks the row first, then the bar).
+     *
+     * Each picker gets the asking control's window x and returns whether it took the keys; one that
+     * has no control there declines, and the next page (or the bar) is asked.
+     */
+    private val horizontalEntries = mutableMapOf<Any, (Float) -> Boolean>()
+
+    internal fun registerHorizontalEntry(owner: Any, pick: (Float) -> Boolean) {
+        horizontalEntries[owner] = pick
+    }
+
+    internal fun unregisterHorizontalEntry(owner: Any) {
+        horizontalEntries.remove(owner)
+    }
+
+    fun enterHorizontalEntry(windowX: Float): Boolean {
+        for (pick in horizontalEntries.values.toList().asReversed()) {
+            if (runCatching { pick(windowX) }.getOrDefault(false)) return true
+        }
+        return false
+    }
+
+    /**
+     * Asks the page on screen to take the keys at its own entry control. The newest entry is tried
+     * first, for a page composed over another; one that declines (or throws) lets the next answer.
+     */
+    fun enterPageContent(): Boolean {
+        for (entry in pageEntries.values.toList().asReversed()) {
+            if (runCatching { entry() }.getOrDefault(false)) return true
+        }
+        return false
+    }
+
+    /**
+     * Steps the keys out of the bar's [left] or right end into the page's controls beside it.
+     *
+     * The newest handoff is tried first, but a screen that is still composed behind another (the
+     * YouTube mini player, a dialog's page) can leave a stale owner registered. A handoff that
+     * cannot take the keys therefore declines, and the next one is asked, instead of blocking the
+     * visible page behind it. A request that throws is a request that declined.
+     */
+    fun focusBarSide(left: Boolean): Boolean {
+        // Snapshot: a handoff may focus a control and cause another screen to register/unregister.
+        for (handoff in barSideHandoffOwners.values.toList().asReversed()) {
+            if (runCatching { if (left) handoff.left() else handoff.right() }.getOrDefault(false)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * The other half of [focusBarSide]: Left at the page control the bar steps into hands the keys
+     * back to that same end of the bar, so the two sides pass them to each other instead of the key
+     * being lost or the focus jumping over the bar into something unrelated.
+     *
+     * [left] is the bar's left end, the first icon drawn (Home); otherwise its right end, the
+     * Settings gear, which is the last slot whatever the bar holds.
+     */
+    fun enterTopBarEnd(left: Boolean): Boolean =
+        enterTopBarAt(if (left) 0 else Int.MAX_VALUE)
 
     /**
      * Set by a screen that closes itself as it asks for the bar (game mode is drawn over the bar), so
@@ -142,6 +221,8 @@ object RootNavFocus {
     private val enterProfile = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     private val enterPosition = MutableSharedFlow<Float>(extraBufferCapacity = 1)
     private val enterTop = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val enterTopAt = MutableSharedFlow<Int>(extraBufferCapacity = 1)
+    private val enterTopNear = MutableSharedFlow<Float>(extraBufferCapacity = 1)
     private val leave = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
 
     val enterRequests: SharedFlow<Unit> = enter.asSharedFlow()
@@ -154,6 +235,12 @@ object RootNavFocus {
 
     /** The top bar's counterpart of [enterRequests]. */
     val topBarEnterRequests: SharedFlow<Unit> = enterTop.asSharedFlow()
+
+    /** Like [topBarEnterRequests], but lands on the requested bar slot. */
+    val topBarEnterAtRequests: SharedFlow<Int> = enterTopAt.asSharedFlow()
+
+    /** Like [topBarEnterRequests], but lands on the icon nearest the given window x. */
+    val positionTopBarEnterRequests: SharedFlow<Float> = enterTopNear.asSharedFlow()
 
     /**
      * One emission per [leaveSidebar]: whether the page should get the keys back. False when the
@@ -187,6 +274,16 @@ object RootNavFocus {
 
     /** Up reaches whichever bar across the top is drawn, so this asks for that one. */
     fun enterTopBar(): Boolean = anyTopBarDrawn && enterTop.tryEmit(Unit)
+
+    /** Asks for the bar at [slot], for a page control that sits beside a particular icon. */
+    fun enterTopBarAt(slot: Int): Boolean = anyTopBarDrawn && enterTopAt.tryEmit(slot)
+
+    /**
+     * Asks for the bar at the icon nearest [windowX] in window space, for a page control that asks
+     * the bar by where it is rather than by which end it is near — the Sports calendar's Up, the
+     * way the Settings rail asks the sidebar for its nearest row by height.
+     */
+    fun enterTopBarNear(windowX: Float): Boolean = anyTopBarDrawn && enterTopNear.tryEmit(windowX)
 
     /**
      * Back and Escape reach only the floating bar. On Settings they belong to the page's own ladder —
@@ -305,8 +402,79 @@ internal fun TopBarLeaveRestoresContent(
         RootNavFocus.leaveRequests.collect { restoreContent ->
             if (!restoreContent || !topBarHasFocus()) return@collect
             if (RootNavFocus.restoreContentFocus(pageOwner())) return@collect
+            // Nothing was remembered (the bar was reached by pointer) or the remembered control is
+            // gone: ask the page itself, so leaving the bar always ends up in the page rather than
+            // in whatever the spatial search finds — which on Home was nothing at all.
+            if (RootNavFocus.enterPageContent()) return@collect
             focusManager.moveFocus(FocusDirection.Down)
         }
+    }
+}
+
+/**
+ * Registers the currently drawn page's controls beside the floating bar, and unregisters them when
+ * the page is covered or leaves. Pages otherwise repeat the same [DisposableEffect],
+ * [LocalScreenCovered][com.nuvio.app.core.ui.LocalScreenCovered] check and cleanup; keeping it here
+ * makes a new page's bar handoff one call.
+ *
+ * [left] and [right] return whether they took the keys. A side left null declines, so the focus
+ * system's normal spatial traversal (or another registered page) can answer instead. [enabled]
+ * lets a page that has not drawn its controls yet stay out of the registry.
+ */
+@Composable
+fun BarSideFocusHandoff(
+    left: (() -> Boolean)? = null,
+    right: (() -> Boolean)? = null,
+    enabled: Boolean = true,
+) {
+    val owner = remember { Any() }
+    val covered = LocalScreenCovered.current
+    val currentLeft by rememberUpdatedState(left)
+    val currentRight by rememberUpdatedState(right)
+    DisposableEffect(owner, covered, enabled) {
+        if (!covered && enabled) {
+            RootNavFocus.registerBarSideHandoff(
+                owner,
+                left = { currentLeft?.invoke() ?: false },
+                right = { currentRight?.invoke() ?: false },
+            )
+        }
+        onDispose { RootNavFocus.unregisterBarSideHandoff(owner) }
+    }
+}
+
+/**
+ * Registers the current page's way in from a bar (see [RootNavFocus.enterPageContent]): the control
+ * keys should land on when the bar is left with nothing to restore. Call inside the page, next to
+ * its focus root; [entry] returns whether it took the keys.
+ *
+ * Dropped while the page is [covered][LocalScreenCovered], so a page kept alive behind another never
+ * answers for it.
+ */
+@Composable
+fun BarPageEntry(entry: () -> Boolean) {
+    val owner = remember { Any() }
+    val covered = LocalScreenCovered.current
+    val currentEntry by rememberUpdatedState(entry)
+    DisposableEffect(owner, covered) {
+        if (!covered) RootNavFocus.registerPageEntry(owner) { currentEntry() }
+        onDispose { RootNavFocus.unregisterPageEntry(owner) }
+    }
+}
+
+/**
+ * Registers the current page's row of controls across the top [pick]er (see
+ * [RootNavFocus.enterHorizontalEntry]). Dropped while the page is [covered][LocalScreenCovered], so a
+ * page kept alive behind another never answers for it.
+ */
+@Composable
+fun HorizontalEntryHandoff(pick: (Float) -> Boolean) {
+    val owner = remember { Any() }
+    val covered = LocalScreenCovered.current
+    val currentPick by rememberUpdatedState(pick)
+    DisposableEffect(owner, covered) {
+        if (!covered) RootNavFocus.registerHorizontalEntry(owner) { currentPick(it) }
+        onDispose { RootNavFocus.unregisterHorizontalEntry(owner) }
     }
 }
 
@@ -334,19 +502,6 @@ internal fun topBarKeyAction(key: Key, index: Int, count: Int): TopBarKeyAction?
 }
 
 /**
- * Whether Right at the last slot must stay on the bar instead of stepping into the page below.
- * The floating bar has no focusable chrome to its right on ordinary tabs, so releasing the key there
- * lets Compose's spatial traversal pick the nearest control in the content (a poster or card row).
- * YouTube draws its own section tabs and search beside the bar, so it keeps releasing at the edge.
- */
-internal fun topBarRightEdgeStaysPut(
-    key: Key,
-    index: Int,
-    count: Int,
-    sideIconsBesideBar: Boolean,
-): Boolean = !sideIconsBesideBar && count > 0 && key == Key.DirectionRight && index >= count - 1
-
-/**
  * Handles the top bar's keys, the sidebar's list turned sideways. Movement and leave act on key-down
  * and are always consumed, so an arrow at either end of the bar stays on the bar instead of
  * wandering into the page. Activation acts on key-up, as the sidebar's does: a held Select fires
@@ -354,8 +509,9 @@ internal fun topBarRightEdgeStaysPut(
  *
  * Up is consumed as well: there is nothing above a bar across the top of the screen, so it must not
  * travel back to the page's hand-off, which would only ask for the bar again. Left at the first
- * entry is released instead, so the bar's own arrow navigation can step out to the utility icons
- * drawn to its left.
+ * entry and Right at the last are released instead, so the bar's own arrow navigation can step out
+ * to the page controls drawn beside it. If there is nothing there, the focus system keeps the key
+ * where it is.
  */
 internal fun Modifier.topBarKeyNavigation(
     index: () -> Int,

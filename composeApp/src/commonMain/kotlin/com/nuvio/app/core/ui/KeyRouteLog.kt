@@ -168,6 +168,19 @@ fun FocusRequester.requestFocusLogged(): Boolean {
 }
 
 /**
+ * Focuses [target] inside a focus group whose entry point is [group].
+ *
+ * Compose's `focusRestorer` on a group redirects a direct child request to the child the group
+ * remembered, which is right for arrow-key entry but wrong when a navigation bar names a specific
+ * control (Right from the bar must reach the Follow button, not the chip used ten seconds ago).
+ * Focusing the group first enters it, then the second request lands on the exact control.
+ */
+fun requestFocusInsideGroup(group: FocusRequester, target: FocusRequester): Boolean {
+    group.requestFocusLogged()
+    return target.requestFocusLogged()
+}
+
+/**
  * Marks a popup or dialog as open while it is composed, so its keys are not logged as lost. Call inside its content.
  * [menu]: the focus router's fallback leaves the keyboard alone while it is open; false for a dialog, which is a
  * [keyLayer] of its own and gets focus back when it loses it.

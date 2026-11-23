@@ -976,7 +976,7 @@ fun main(args: Array<String>) {
                                 java.awt.EventQueue.invokeLater { replayKeyNobodyTook(pressed, onlyWhenFocusLost = true) }
                             }
                             // Logging only: follow the key through its handlers, then write where it went.
-                            if (keyCode in KEYBOARD_NAVIGATION_KEYS || keyCode == KeyEvent.VK_ESCAPE) {
+                            if (isFallbackFollowedKey(keyCode)) {
                                 com.nuvio.app.core.ui.KeyRouteLog.keyPressed(KeyEvent.getKeyText(keyCode))
                                 val pressed = event as KeyEvent
                                 java.awt.EventQueue.invokeLater {
@@ -1504,6 +1504,22 @@ private fun swallowHeldSelectKey(event: KeyEvent): Boolean {
 
 /** The keys that mean "moving around with the keyboard" (or a pad's D-pad and A, which arrive as these). */
 /**
+ * The window the focus fallback replays into, or null when another application is in front.
+ *
+ * [java.awt.KeyboardFocusManager.getFocusedWindow] is not enough on Wayland: KWin does not hand
+ * Xwayland a focus owner, so it comes back null while the window is plainly the one on screen, and
+ * the fallback then did nothing at all — after a focus drop every key stayed dead (Back was the one
+ * that showed it, returning from the sports player). Fall back to the app's own largest showing
+ * window, which is the same rule the pad's key injector uses.
+ */
+private fun fallbackWindow(focusManager: KeyboardFocusManager): java.awt.Window? {
+    (focusManager.focusedWindow as? androidx.compose.ui.awt.ComposeWindow)?.let { return it }
+    return java.awt.Window.getWindows()
+        .filter { it.isShowing && it.isVisible && it is androidx.compose.ui.awt.ComposeWindow }
+        .maxByOrNull { it.width.toLong() * it.height }
+}
+
+/**
  * Focus router fallback (KeyLayers): [pressed] came back from the window unconsumed. When the screen on top does not
  * hold focus, focus goes back to it and the key is sent again. [onlyWhenFocusLost]: only when nothing at all holds
  * focus (hotkeys), so an unused letter on a top-bar button does not pull focus off it.
@@ -1512,7 +1528,7 @@ private fun replayKeyNobodyTook(pressed: KeyEvent, onlyWhenFocusLost: Boolean) {
     if (pressed.isConsumed || com.nuvio.app.core.ui.KeyLayers.replaying) return
     if (onlyWhenFocusLost && com.nuvio.app.core.ui.KeyRouteLog.focusHeld) return
     val focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
-    val window = focusManager.focusedWindow as? androidx.compose.ui.awt.ComposeWindow ?: return
+    val window = fallbackWindow(focusManager) ?: return
     if (com.nuvio.app.core.ui.KeyRouteLog.popupOpen) return
     if (com.nuvio.app.core.ui.KeyLayers.reclaim(KeyEvent.getKeyText(pressed.keyCode)) == null) return
     val target: java.awt.Component = focusManager.focusOwner ?: window
@@ -1569,10 +1585,23 @@ private val FOCUS_FALLBACK_SKIPPED_KEYS = setOf(
     KeyEvent.VK_UNDEFINED,
 )
 
-/** Keys the focus router's fallback sends on to the screen on top when nothing took them (see KeyLayers). */
-private val FOCUS_FALLBACK_KEYS = setOf(
+/**
+ * Keys the focus router's fallback sends on to the screen on top when nothing took them (see KeyLayers).
+ *
+ * Back and Escape belong here too: with no focused node they are delivered to nobody at all — not to
+ * a screen, not to the window — so a window that lost focus (closing the player over the Sports page
+ * is the one that showed it) stopped backing until an arrow happened to be pressed first. Escape is
+ * left to the window's own handling only while something else took it: [replayKeyNobodyTook] skips a
+ * key Compose consumed, and never touches a popup or a text field.
+ */
+internal val FOCUS_FALLBACK_KEYS = setOf(
     KeyEvent.VK_UP, KeyEvent.VK_DOWN, KeyEvent.VK_LEFT, KeyEvent.VK_RIGHT, KeyEvent.VK_ENTER,
+    KeyEvent.VK_ESCAPE, KeyEvent.VK_BACK_SPACE,
 )
+
+/** The keys whose trip through the handlers the focus router follows, and whose fallback it drives. */
+internal fun isFallbackFollowedKey(keyCode: Int): Boolean =
+    keyCode in KEYBOARD_NAVIGATION_KEYS || keyCode == KeyEvent.VK_ESCAPE || keyCode == KeyEvent.VK_BACK_SPACE
 
 private val KEYBOARD_NAVIGATION_KEYS = setOf(
     KeyEvent.VK_UP, KeyEvent.VK_DOWN, KeyEvent.VK_LEFT, KeyEvent.VK_RIGHT,

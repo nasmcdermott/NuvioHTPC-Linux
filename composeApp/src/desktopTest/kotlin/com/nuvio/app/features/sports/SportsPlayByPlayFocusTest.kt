@@ -44,4 +44,56 @@ class SportsPlayByPlayFocusTest {
         )
         assertTrue(sportsPeriodOrder("2nd Half") > sportsPeriodOrder("1st Half"))
     }
+
+    @Test
+    fun `wallclock puts newest first whichever way the feed lists the plays`() {
+        val oldest = play("oldest", "1st Quarter", "15:00", wallclock = 1_000L)
+        val middle = play("middle", "2nd Quarter", "10:00", wallclock = 2_000L)
+        val newest = play("newest", "4th Quarter", "0:30", wallclock = 3_000L)
+
+        val periods = playByPlayPeriodsNewestFirst(listOf(oldest, middle, newest))
+        assertEquals(listOf("4th Quarter", "2nd Quarter", "1st Quarter"), periods.map { it.first })
+        assertEquals(listOf("newest", "middle", "oldest"), periods.flatMap { it.second }.map { it.id })
+
+        // A live summary can send its drives newest-first; the wall clock still wins.
+        val reversedFeed = playByPlayPeriodsNewestFirst(listOf(newest, middle, oldest))
+        assertEquals(listOf("newest", "middle", "oldest"), reversedFeed.flatMap { it.second }.map { it.id })
+    }
+
+    @Test
+    fun `without wallclock chronological feeds reverse and newest-first feeds stay`() {
+        val first = play("first", "1st Half", "10:00")
+        val second = play("second", "2nd Half", "80:00")
+
+        assertEquals(
+            listOf("second", "first"),
+            playByPlayPeriodsNewestFirst(listOf(first, second)).flatMap { it.second }.map { it.id },
+        )
+        assertEquals(
+            listOf("second", "first"),
+            playByPlayPeriodsNewestFirst(listOf(second, first)).flatMap { it.second }.map { it.id },
+        )
+    }
+
+    @Test
+    fun `a live history keeps only its newest plays`() {
+        val plays = (1..8).map { play("p$it", "1st", it.toString(), wallclock = it.toLong()) }
+
+        val periods = playByPlayPeriodsNewestFirst(plays, limit = 3)
+
+        assertEquals(listOf("p8", "p7", "p6"), periods.single().second.map { it.id })
+    }
+
+    private fun play(
+        id: String,
+        period: String,
+        clock: String,
+        wallclock: Long? = null,
+    ) = PlayByPlayEntry(
+        id = id,
+        period = period,
+        clock = clock,
+        text = id,
+        wallclockMs = wallclock,
+    )
 }

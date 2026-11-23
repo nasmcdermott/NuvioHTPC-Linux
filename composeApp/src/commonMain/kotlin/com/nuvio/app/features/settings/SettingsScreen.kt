@@ -368,19 +368,13 @@ fun SettingsScreen(
         Modifier
     }
     // fork:settings-arrows - arrows move focus between the rows and the categories, the way the setup wizard does. Bubble
-    // phase, after the rows: a text field or a slider keeps Left/Right for itself. When nothing lies that way (the end
-    // of a list), the press goes to the next or previous control in order instead.
+    // phase, after the rows: a text field or a slider keeps Left/Right for itself. An edge is an edge: when nothing lies
+    // further that way, the key stays where it is instead of wrapping to another region or the page above.
     val arrowKeyModifier = if (isDesktop) {
         Modifier.onKeyEvent { event ->
             val direction = arrowFocusDirection(event) ?: return@onKeyEvent false
-            // Up at the top, Left at the category rail and Right at the page's right edge are
-            // boundaries, not wraps: keep them where they are. Only Down keeps its forward
-            // fallback for lazy lists where the next row is not composed yet.
-            val fallback = settingsArrowTraversalFallback(direction)
-            settingsFocusManager.moveFocus(direction) ||
-                (fallback != null && settingsFocusManager.moveFocus(fallback)) ||
-                direction == FocusDirection.Up || direction == FocusDirection.Left ||
-                direction == FocusDirection.Right
+            settingsFocusManager.moveFocus(direction)
+            true
         }
             // An Enter no row used would otherwise be read by desktop Compose as "focus the first thing inside", and
             // focus would jump (see musicKeyboardRoot).
@@ -1870,6 +1864,24 @@ private fun TabletSettingsScreen(
                                 Res.string.settings_desktop_categories_customize,
                             ),
                             onTitleClick = { categoryVisibilityDialogVisible = true },
+                            // The heading is part of the rail's left edge too: Left enters the
+                            // global sidebar when there is one, else it stays here.
+                            titleModifier = Modifier
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown &&
+                                        event.navigationKey() == Key.DirectionLeft
+                                    ) {
+                                        if (com.nuvio.app.core.ui.RootNavFocus.sidebarAvailable) {
+                                            com.nuvio.app.core.ui.RootNavFocus.enterSidebarAtProfile()
+                                        }
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
+                                // The heading is part of the rail: Back climbs out to the bar,
+                                // just as it does from a category row.
+                                .settingsBackOnly { requestSettingsNavigationBarFocus(focusManager) },
                         ) {
                             if (visibleSidebarItems.isEmpty()) {
                                 Text(
@@ -2721,11 +2733,24 @@ private fun DesktopSettingsSidebarList(
                 // icon first, so it took two presses to reach the bar. Up still reaches the top bar
                 // icons (including the update icon) and Left from those icons keeps its own walk.
                 .onPreviewKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown &&
-                        event.navigationKey() == Key.DirectionLeft &&
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    val navKey = event.navigationKey()
+                    val focusedIndex = focusedCategories.firstOrNull()
+                    if (navKey == Key.DirectionDown && focusedIndex != null) {
+                        // The selected category unfolds its sections directly below the row, so
+                        // Down belongs to them first. Every other row steps to the next category
+                        // by index, which also reaches a row still below the lazy list's fold.
+                        val sectionsBelow = focusedIndex == selectedIndex && subItems.size > 1
+                        if (!sectionsBelow) {
+                            if (focusedIndex < items.lastIndex) moveToIndex = focusedIndex + 1
+                            // At the last category there is nothing below it: keep the key there
+                            // instead of letting traversal wrap to the top of the setting page.
+                            return@onPreviewKeyEvent true
+                        }
+                    }
+                    if (navKey == Key.DirectionLeft &&
                         com.nuvio.app.core.ui.RootNavFocus.sidebarAvailable
                     ) {
-                        val focusedIndex = focusedCategories.firstOrNull()
                         val windowY = focusedIndex?.let { categoryCenters[it] }
                         if (windowY != null) {
                             com.nuvio.app.core.ui.RootNavFocus.enterSidebarNear(windowY)
@@ -2736,16 +2761,12 @@ private fun DesktopSettingsSidebarList(
                         false
                     }
                 }
-                // The rail itself, or its "Categories" header, can hold focus with no row to
-                // consume Left. From there the navigation bar is the next stop too.
+                // The rail is the page's left edge. With no side navigation bar to its left,
+                // Left stays on the category that has the keys instead of jumping up into the top
+                // bar; a rail row's own preview above handles the case where the sidebar is shown.
                 .onKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown &&
+                    event.type == KeyEventType.KeyDown &&
                         event.navigationKey() == Key.DirectionLeft
-                    ) {
-                        requestSettingsNavigationBarFocus(focusManager)
-                    } else {
-                        false
-                    }
                 },
             state = listState,
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -2804,6 +2825,12 @@ private fun DesktopSettingsSidebarList(
                                     rowRequesters.getOrNull(index)?.let { requester ->
                                         runCatching { requester.requestFocus() }.getOrDefault(false)
                                     } ?: false
+                                },
+                                // Down from the last sub-entry goes to the next category, or stops
+                                // at the end of the rail. It must not fall through to the page.
+                                onDownFromLast = {
+                                    if (index < items.lastIndex) moveToIndex = index + 1
+                                    true
                                 },
                             )
                         }
@@ -2922,6 +2949,7 @@ private fun DesktopSettingsSidebarSubList(
     currentPage: SettingsPage,
     onClick: (DesktopSettingsSidebarSubItem) -> Unit,
     focusParent: () -> Boolean,
+    onDownFromLast: () -> Boolean,
 ) {
     val tokens = MaterialTheme.nuvio
     val guideColor = tokens.colors.borderDefault
@@ -2975,6 +3003,13 @@ private fun DesktopSettingsSidebarSubList(
                     .hoverable(hoverSource)
                     .clip(RoundedCornerShape(NuvioTokens.Radius.sm))
                     .focusRequester(requesters[index])
+                    // The last sub-entry consumes Down rather than letting the shell's lazy-list
+                    // fallback jump to the top of the setting page.
+                    .onPreviewKeyEvent { event ->
+                        itemFocused && event.type == KeyEventType.KeyDown &&
+                            event.navigationKey() == Key.DirectionDown && index == items.lastIndex &&
+                            onDownFromLast()
+                    }
                     // Back returns to the category row above rather than leaving Settings.
                     .settingsBackOnly(focusParent)
                     .clickable { onClick(item) }
@@ -3267,6 +3302,12 @@ private fun DesktopSettingsTopBar(
                             .graphicsLayer {
                                 scaleX = profileScale
                                 scaleY = profileScale
+                            }
+                            // The profile avatar is the top bar's left edge. Left must stay on it
+                            // rather than walking into the off-screen gutter.
+                            .onPreviewKeyEvent { event ->
+                                event.type == KeyEventType.KeyDown &&
+                                    event.navigationKey() == Key.DirectionLeft
                             }
                             .clickable(
                                 enabled = onProfileClick != null,
@@ -3583,7 +3624,9 @@ private fun DesktopSettingsContextPanel(
     onRecentSearchClick: (String) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val focusManager = LocalFocusManager.current
     val playerSettings by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val backToPage: () -> Boolean = { SettingsContentFocus.requestEntry(focusManager) }
     Surface(
         modifier = Modifier
             .width(DesktopSettingsContextPanelWidth)
@@ -3608,46 +3651,50 @@ private fun DesktopSettingsContextPanel(
                         .background(settingsColumnGuideBrush()),
                 )
             }
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 22.dp, vertical = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(22.dp),
-            ) {
-                LaunchedEffect(Unit) { SettingsFavoritesRepository.ensureLoaded() }
-                val favorites by SettingsFavoritesRepository.favorites.collectAsStateWithLifecycle()
-                DesktopPanelSection(title = stringResource(Res.string.settings_desktop_favorites)) {
-                    if (favorites.isEmpty()) {
-                        Text(
-                            text = stringResource(Res.string.settings_desktop_favorites_empty),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = tokens.colors.textMuted,
-                        )
-                    } else {
-                        DesktopFavoritesList(
-                            favorites = favorites,
-                            onPageChange = onPageChange,
-                        )
+            CompositionLocalProvider(LocalSettingsFocusRegion provides SettingsFocusRegion.ContextPanel) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 22.dp, vertical = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(22.dp),
+                ) {
+                    LaunchedEffect(Unit) { SettingsFavoritesRepository.ensureLoaded() }
+                    val favorites by SettingsFavoritesRepository.favorites.collectAsStateWithLifecycle()
+                    DesktopPanelSection(title = stringResource(Res.string.settings_desktop_favorites)) {
+                        if (favorites.isEmpty()) {
+                            Text(
+                                text = stringResource(Res.string.settings_desktop_favorites_empty),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = tokens.colors.textMuted,
+                            )
+                        } else {
+                            DesktopFavoritesList(
+                                favorites = favorites,
+                                onPageChange = onPageChange,
+                                onBack = backToPage,
+                            )
+                        }
                     }
-                }
-                LaunchedEffect(Unit) { SettingsSearchHistoryRepository.ensureLoaded() }
-                val recentSearches by SettingsSearchHistoryRepository.recent.collectAsStateWithLifecycle()
-                // Only once there is something to show: an empty "no searches yet" block under the
-                // favourites would be clutter on every page.
-                if (recentSearches.isNotEmpty()) {
-                    DesktopPanelSection(title = stringResource(Res.string.settings_desktop_recent_searches)) {
-                        Column {
-                            recentSearches.forEach { recent ->
-                                val target = recent.page?.let { runCatching { SettingsPage.valueOf(it) }.getOrNull() }
-                                DesktopActionRow(
-                                    icon = Icons.Rounded.History,
-                                    title = recent.query,
-                                    subtitle = target?.let { stringResource(it.titleRes) }.orEmpty(),
-                                    // Right-click forgets it, as it unpins a favourite.
-                                    onSecondaryClick = { SettingsSearchHistoryRepository.remove(recent.query) },
-                                    bounceOnFocus = true,
-                                ) {
-                                    onRecentSearchClick(recent.query)
+                    LaunchedEffect(Unit) { SettingsSearchHistoryRepository.ensureLoaded() }
+                    val recentSearches by SettingsSearchHistoryRepository.recent.collectAsStateWithLifecycle()
+                    // Only once there is something to show: an empty "no searches yet" block under the
+                    // favourites would be clutter on every page.
+                    if (recentSearches.isNotEmpty()) {
+                        DesktopPanelSection(title = stringResource(Res.string.settings_desktop_recent_searches)) {
+                            Column {
+                                recentSearches.forEach { recent ->
+                                    val target = recent.page?.let { runCatching { SettingsPage.valueOf(it) }.getOrNull() }
+                                    DesktopActionRow(
+                                        icon = Icons.Rounded.History,
+                                        title = recent.query,
+                                        subtitle = target?.let { stringResource(it.titleRes) }.orEmpty(),
+                                        modifier = Modifier.settingsBackOnly(backToPage),
+                                        // Right-click forgets it, as it unpins a favourite.
+                                        onSecondaryClick = { SettingsSearchHistoryRepository.remove(recent.query) },
+                                        bounceOnFocus = true,
+                                    ) {
+                                        onRecentSearchClick(recent.query)
+                                    }
                                 }
                             }
                         }
@@ -3662,6 +3709,7 @@ private fun DesktopSettingsContextPanel(
 private fun DesktopFavoritesList(
     favorites: List<SettingsFavorite>,
     onPageChange: (SettingsPage) -> Unit,
+    onBack: () -> Boolean,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val listState = rememberLazyListState()
@@ -3685,11 +3733,13 @@ private fun DesktopFavoritesList(
                     title = favorite.title,
                     subtitle = subtitle,
                     modifier = with(this@ReorderableItem) {
-                        Modifier.draggableHandle(
-                            onDragStarted = {
-                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                            },
-                        )
+                        Modifier
+                            .draggableHandle(
+                                onDragStarted = {
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                },
+                            )
+                            .settingsBackOnly(onBack)
                     },
                     onSecondaryClick = {
                         SettingsFavoritesRepository.remove(favorite.anchor)
@@ -3726,6 +3776,7 @@ private fun DesktopPanelSection(
     titleAction: ImageVector?,
     titleActionContentDescription: String?,
     onTitleClick: (() -> Unit)?,
+    titleModifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -3733,6 +3784,7 @@ private fun DesktopPanelSection(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(titleModifier)
                 .then(
                     if (onTitleClick != null) Modifier.clickable(onClick = onTitleClick) else Modifier,
                 ),

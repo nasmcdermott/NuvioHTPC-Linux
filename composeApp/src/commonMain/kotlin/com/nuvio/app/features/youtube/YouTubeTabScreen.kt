@@ -1,6 +1,8 @@
 package com.nuvio.app.features.youtube
 
 import com.nuvio.app.core.ui.trackSidebarEntryFocusY
+import com.nuvio.app.core.ui.RootNavFocus
+import com.nuvio.app.core.ui.navigationKey
 import com.nuvio.app.core.ui.keyLayer
 import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.animation.core.animateFloatAsState
@@ -130,11 +132,13 @@ import com.nuvio.app.core.ui.PosterZoomOverlayAction
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.core.ui.rememberHoldToSelectState
 import com.nuvio.app.core.ui.secondaryClick
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -144,6 +148,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
+import com.nuvio.app.core.ui.arrowFocusDirection
 import com.nuvio.app.core.ui.arrowKeyFocusNavigation
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.youtubemusic.YouTubeMusicAuth
@@ -519,6 +524,18 @@ fun YouTubeTabScreen(
     // keyboard-only).
     val firstCardFocus = searchBox.resultsFocus
     val searchFocus = remember { FocusRequester() }
+    // The first control in the section row: Up from it, and from the first row of cards, reaches
+    // the floating bar through this stop instead of relying on a geometric search that may land on
+    // a card on the other side of the header.
+    val headerFocus = remember { FocusRequester() }
+    // A return from a pushed route (the player) asks the page for the keys rather than leaving the
+    // window with no focused node, where every key — Back included — went nowhere.
+    com.nuvio.app.core.ui.BarPageEntry { headerFocus.requestFocusLogged() }
+    // The floating bar's right end steps to the leftmost control of the header's right-hand group:
+    // the corner player's own "Watch page" while it is up, otherwise the "Hide watched" filter.
+    // Pointing at Hide watched unconditionally skipped the mini player's buttons entirely.
+    val hideWatchedFocus = remember { FocusRequester() }
+    val watchPageFocus = remember { FocusRequester() }
     // The search is an icon among the section icons; it expands into the field only when selected,
     // as Home's search icon does, instead of owning a permanently flattened oval in the header.
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
@@ -612,6 +629,24 @@ fun YouTubeTabScreen(
     val sky by remember { YouTubeFeedRepository.skyBackground }.collectAsStateWithLifecycle()
     val tokens = MaterialTheme.nuvio
     val barHosted = searchBox.barHosted
+    // Right from the bar's Settings gear goes to the first header filter the bar sits beside.
+    // Left is left to the focus system, so the rest of the header row keeps its normal walk.
+    val leftLeavesTheGroup: (KeyEvent) -> Boolean = { ev ->
+        arrowFocusDirection(ev) == FocusDirection.Left && RootNavFocus.enterTopBarEnd(left = false)
+    }
+    val rightGroupEdgeFocus = if (browsing) watchPageFocus else hideWatchedFocus
+    com.nuvio.app.core.ui.BarSideFocusHandoff(
+        // The search field exists only when the tab draws it (never when the bar hosts the
+        // search), so fall through to the header's first section tab: Left from the bar was a
+        // dead end on every layout with the floating bar.
+        left = {
+            searchFocus.requestFocusLogged() || headerFocus.requestFocusLogged()
+        },
+        // No `enabled` gate here: the header (and so the left end) exists signed out too. The
+        // right end declines by itself while the Hide watched pill is not drawn, which is the
+        // signed-out case, and the bar's own edge handling then does what it always did.
+        right = { rightGroupEdgeFocus.requestFocusLogged() },
+    )
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -665,7 +700,19 @@ fun YouTubeTabScreen(
         // A fixed 46dp row: the icon pills and the expanded search box are the same height, so
         // opening the search does not push the recommendations down.
         Row(
-            modifier = Modifier.fillMaxWidth().height(46.dp).padding(bottom = 2.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(46.dp)
+                .padding(bottom = 2.dp)
+                // The header is the page's top row: Up from it belongs to the bar, not to a
+                // geometric search that can land somewhere else inside the tab.
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.navigationKey() == Key.DirectionUp) {
+                        RootNavFocus.enterTopBar()
+                    } else {
+                        false
+                    }
+                },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -675,9 +722,15 @@ fun YouTubeTabScreen(
                 selectedName = name
             }
             // The sections as named icons; the one in use is lit.
-            YouTubeFeedKind.entries.filter { it.inHeader }.forEach { entry ->
+            val headerEntries = YouTubeFeedKind.entries.filter { it.inHeader }
+            headerEntries.forEachIndexed { headerIndex, entry ->
                 val current = entry == kind && !showingChannelList && !showingPlaylists
-                YouTubeSectionTab(entry.headerIcon, entry.label, on = current) {
+                YouTubeSectionTab(
+                    entry.headerIcon,
+                    entry.label,
+                    on = current,
+                    modifier = if (headerIndex == 0) Modifier.focusRequester(headerFocus) else Modifier,
+                ) {
                     if (current) YouTubeFeedRepository.load(entry) else section(entry.name)
                 }
             }
@@ -801,6 +854,12 @@ fun YouTubeTabScreen(
                         on = kind == YouTubeFeedKind.Search,
                         showLabel = false,
                         modifier = Modifier.focusRequester(searchFocus),
+                        // The magnifier sits beside the bar's left end: Right enters the bar there
+                        // (Home), so the icons read on from it instead of jumping to the filters.
+                        onExtraKey = { ev ->
+                            arrowFocusDirection(ev) == FocusDirection.Right &&
+                                RootNavFocus.enterTopBarEnd(left = true)
+                        },
                         onClick = { searchExpanded = true },
                     )
                 }
@@ -809,7 +868,14 @@ fun YouTubeTabScreen(
             // fork:youtube-mini-player - leaves the tab around the corner player for the watch page it
             // came from. Drawn only while that player is up, immediately left of the filters.
             if (browsing) {
-                YouTubeSectionTab(Icons.Rounded.Fullscreen, "Watch page", on = false) {
+                YouTubeSectionTab(
+                    Icons.Rounded.Fullscreen,
+                    "Watch page",
+                    on = false,
+                    modifier = Modifier.focusRequester(watchPageFocus),
+                    // The group's left edge, beside the bar's right end: Left goes back into the bar.
+                    onExtraKey = leftLeavesTheGroup,
+                ) {
                     YouTubeWatchLayout.stopBrowsing()
                 }
                 YouTubeSectionTab(Icons.Rounded.Close, "Close mini player", on = false) {
@@ -818,7 +884,15 @@ fun YouTubeTabScreen(
             }
             if (auth.signedIn) {
                 // Named like the sections; lit while the filter is on.
-                YouTubeSectionTab(Icons.Rounded.VisibilityOff, "Hide watched", on = hideWatched) {
+                YouTubeSectionTab(
+                    Icons.Rounded.VisibilityOff,
+                    "Hide watched",
+                    on = hideWatched,
+                    modifier = Modifier.focusRequester(hideWatchedFocus),
+                    // Only the group's left edge goes back into the bar; with the corner player up
+                    // that is "Watch page", so this pill keeps its normal Left.
+                    onExtraKey = if (browsing) null else leftLeavesTheGroup,
+                ) {
                     YouTubeFeedRepository.setHideWatched(!hideWatched)
                 }
                 YouTubeSectionTab(Icons.Rounded.Sensors, "Hide streams", on = hideStreams) {
@@ -1054,6 +1128,7 @@ fun YouTubeTabScreen(
                                 else -> null
                             },
                             atLeftEdge = columnFocus.isFirstColumn(index),
+                            upFocus = headerFocus,
                         )
                     }
                     }
@@ -1886,6 +1961,8 @@ private fun YouTubeVideoCard(
     focusRequester: FocusRequester? = null,
     /** The leftmost card in its grid row: Left leaves the grid for the navigation bar. */
     atLeftEdge: Boolean = false,
+    /** Where Up goes when the grid has no row above (the first row): the header, then the bar. */
+    upFocus: FocusRequester? = null,
     modifier: Modifier = Modifier,
 ) {
     // The card's menu, open at this window position (the ⋮ button, the cursor, or beside the card).
@@ -1995,6 +2072,7 @@ private fun YouTubeVideoCard(
             // On the first column, Left has nowhere to go in the grid: cancel the spatial move so
             // the tab's releaseWhenStuck hand-off reaches the sidebar instead of the YouTube tabs.
             .then(if (atLeftEdge) Modifier.focusProperties { left = FocusRequester.Cancel } else Modifier)
+            .then(if (upFocus != null) Modifier.focusProperties { up = upFocus } else Modifier)
             // Select plays; holding it (Enter, or a pad's A) opens the menu beside the card, as
             // right-click does under the cursor.
             .onPreviewKeyEvent { event ->
@@ -2311,11 +2389,20 @@ private fun CardGlassButton(
  * it is the one shown, like the settings bar's pages; the keyboard ring follows the pill.
  */
 @Composable
-private fun YouTubeSectionTab(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, on: Boolean, onClick: () -> Unit) {
+private fun YouTubeSectionTab(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    on: Boolean,
+    modifier: Modifier = Modifier,
+    onExtraKey: ((KeyEvent) -> Boolean)? = null,
+    onClick: () -> Unit,
+) {
     if (LocalCompactSectionTabs.current) {
-        com.nuvio.app.core.ui.NuvioPosterHoverTooltip(title = label) { YouTubeSectionTabPill(icon, label, on, showLabel = false, onClick = onClick) }
+        com.nuvio.app.core.ui.NuvioPosterHoverTooltip(title = label) {
+            YouTubeSectionTabPill(icon, label, on, showLabel = false, modifier = modifier, onExtraKey = onExtraKey, onClick = onClick)
+        }
     } else {
-        YouTubeSectionTabPill(icon, label, on, showLabel = true, onClick = onClick)
+        YouTubeSectionTabPill(icon, label, on, showLabel = true, modifier = modifier, onExtraKey = onExtraKey, onClick = onClick)
     }
 }
 
@@ -2332,6 +2419,7 @@ private fun YouTubeSectionTabPill(
     on: Boolean,
     showLabel: Boolean,
     modifier: Modifier = Modifier,
+    onExtraKey: ((KeyEvent) -> Boolean)? = null,
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -2362,6 +2450,7 @@ private fun YouTubeSectionTabPill(
                 },
             )
             .musicKeyFocusRing(shape)
+            .then(if (onExtraKey != null) Modifier.onPreviewKeyEvent(onExtraKey) else Modifier)
             .hoverable(interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = if (showLabel) 12.dp else 8.dp),

@@ -2488,10 +2488,14 @@ fun HomeScreen(
         FirstRunWizardController.uiState.map { it.visible }.distinctUntilChanged()
     }.collectAsStateWithLifecycle(initialValue = FirstRunWizardController.uiState.value.visible)
     val homeFocusHeld by rememberUpdatedState(setupPanelOpen && contentMode is HomeContentMode.Normal)
-    fun requestHomeFocus() {
-        if (homeScreenCovered || homeFocusHeld) return
-        tvFocusRequester.requestFocusLogged()
+    fun requestHomeFocus(): Boolean {
+        if (homeScreenCovered || homeFocusHeld) return false
+        return tvFocusRequester.requestFocusLogged()
     }
+    // Leaving the top bar with Back (or Down, or the icon of the page already open) always lands
+    // here: on the Home root, whose cursor is still on the row and card the person was using, so the
+    // keys come back to that row rather than to nothing when the remembered control has gone.
+    com.nuvio.app.core.ui.BarPageEntry { requestHomeFocus() }
     var homeRootHasFocus by remember { mutableStateOf(false) }
     // A filter bar in a row's header (Discover's browser row, Library's first row) takes real focus, unlike the cards:
     // Up from its row's cards moves into it, and while it has focus the arrows walk its filters and Enter opens one.

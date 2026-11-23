@@ -66,18 +66,6 @@ internal fun settingsRootEntersPage(
 ): Boolean = rootFocused && !textInputActive && !searchFocused &&
     action != null && action != SettingsNavKeyAction.Back
 
-/**
- * The traversal step the Settings shell falls back to when an arrow found no control by geometry.
- * Only Down walks forward. Left, Up and Right are boundaries and have no fallback: Up must not
- * wrap onto the context panel, Left must not wrap from the category rail to the right, and Right
- * at a row's or the page's right edge must not drop onto the setting below. Null means "consume
- * the key where it is".
- */
-internal fun settingsArrowTraversalFallback(direction: FocusDirection): FocusDirection? = when (direction) {
-    FocusDirection.Down -> FocusDirection.Next
-    else -> null
-}
-
 /** Settings keys are off while a text field has focus, so typing, Escape and Enter reach the field. */
 internal fun settingsNavKeysActive(textInputFocused: Boolean): Boolean = !textInputFocused
 
@@ -705,7 +693,10 @@ internal fun Modifier.settingsNavItem(
                 SettingsNavKeyAction.Right -> FocusDirection.Right
                 else -> return@onKeyEvent false
             }
+            // Move if that way is open, and consume either way: at an edge the key must not
+            // fall through to the shell and wrap to the top of the page.
             focusManager.moveFocus(direction)
+            true
         }
         .then(
             // The ring marks the stop the keys are actually on: a row that merely contains the

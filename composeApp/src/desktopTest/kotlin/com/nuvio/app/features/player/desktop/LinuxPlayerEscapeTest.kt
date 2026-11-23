@@ -23,6 +23,24 @@ class LinuxPlayerEscapeTest {
         assertEquals(1, calls)
     }
 
+    /**
+     * fork:pip-browse - while the player plays in the corner box it is a pane of the app around it, so
+     * Back must reach that app: taken by the box it hid a HUD nobody could see and never got to the
+     * page, and Back looked dead until the box was closed (the Sports live stream was the case).
+     */
+    @Test fun theCornerBoxLeavesBackToTheAppAroundIt() {
+        val input = LinuxPlayerEscape(DesktopHostOs.LINUX)
+        var calls = 0
+        val event = key()
+        assertFalse(input.dispatch(event, true, KeyEvent.VK_ESCAPE, inCornerBox = true) { calls++ })
+        assertFalse(event.isConsumed, "the app around the box must still receive Back")
+        assertEquals(0, calls)
+        // Nor is the release swallowed after it.
+        val release = key(id = KeyEvent.KEY_RELEASED)
+        assertFalse(input.dispatch(release, true, KeyEvent.VK_ESCAPE, inCornerBox = true) { calls++ })
+        assertFalse(release.isConsumed)
+    }
+
     @Test fun heldEscapeCannotDismissPanelThenNavigateOnAutoRepeat() {
         val input = LinuxPlayerEscape(DesktopHostOs.LINUX)
         var calls = 0

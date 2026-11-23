@@ -27,7 +27,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -39,6 +38,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
@@ -110,6 +111,10 @@ internal fun SportsScreen(
 
     // Focus bands in top-to-bottom ladder order.
     val headerBandFocus = remember { FocusRequester() }
+    // A pushed route (the player, a game's details) closes and leaves no focused node behind: the
+    // window then drops every key, Back included, until something is clicked. Registering the page's
+    // own way in lets the return ask for the keys instead (AppTabHost's returning-route hand-back).
+    com.nuvio.app.core.ui.BarPageEntry { headerBandFocus.requestFocusLogged() }
     val modeGamesFocus = remember { FocusRequester() }
     val chipsBandFocus = remember { FocusRequester() }
     val dateBandFocus = remember { FocusRequester() }
@@ -189,14 +194,21 @@ internal fun SportsScreen(
     }
 
     // Seat initial keyboard/controller focus when arriving on the tab.
+    //
+    // A returning route can still own focus for part of its exit animation — closing the player over
+    // this page is the case that showed it: one request at a fixed delay was refused and never
+    // retried, so the page was left with no focused control at all, and every key (Back included)
+    // then went nowhere. Retry over a short bounded window, and stop the moment focus lands.
     LaunchedEffect(Unit) {
-        delay(60)
-        if (!pickerOpen) {
-            when {
+        repeat(20) { attempt ->
+            delay(if (attempt == 0) 60 else 50)
+            if (pickerOpen) return@LaunchedEffect
+            val took = when {
                 tablesMode -> tablesBandFocus.requestFocusLogged()
                 openGame != null -> detailBandFocus.requestFocusLogged()
                 else -> dateBandFocus.requestFocusLogged()
             }
+            if (took) return@LaunchedEffect
         }
     }
 
@@ -290,7 +302,24 @@ internal fun SportsScreen(
                     selected = selectedDay,
                     bandRequester = dateBandFocus,
                     onSelect = { selectedDay = it; openGameId = null },
-                    onUp = { if (!mySportsOnly) chipsBandFocus.requestFocusLogged() else headerBandFocus.requestFocusLogged() },
+                    // Up asks the bar by where the day is, the way the Settings rail asks the
+                    // sidebar for its nearest row: a day on the right reaches the right of the bar
+                    // (and the page's top-right buttons from there), a day on the left the icon
+                    // nearest it. With no bar drawn it keeps the old ladder — the sport chips, or
+                    // the header band on the My Sports layout.
+                    onUp = { focusedWindowX ->
+                        (focusedWindowX != null &&
+                            (
+                                RootNavFocus.enterHorizontalEntry(focusedWindowX) ||
+                                    RootNavFocus.enterTopBarNear(focusedWindowX)
+                                )
+                            ) ||
+                            if (!mySportsOnly) {
+                                chipsBandFocus.requestFocusLogged()
+                            } else {
+                                headerBandFocus.requestFocusLogged()
+                            }
+                    },
                     onDown = {
                         if (mySportsOnly && heroGame != null) {
                             heroFocus.requestFocusLogged()
@@ -388,7 +417,7 @@ internal fun SportsScreen(
 }
 
 @Composable
-private fun SportsHeaderBand(
+internal fun SportsHeaderBand(
     tablesMode: Boolean,
     mySportsOnly: Boolean,
     followedCount: Int,
@@ -409,20 +438,43 @@ private fun SportsHeaderBand(
     val allEventsChipFocus = remember { FocusRequester() }
     val tablesChipFocus = remember { FocusRequester() }
     val followPillFocus = remember { FocusRequester() }
-    // The chips and pills are the two halves of the row the floating bar sits in the middle of.
-    // Registering them lets the bar's ends step into them (RootNavFocus.focusBarSide).
-    val sideHandoffOwner = remember { Any() }
-    val covered = com.nuvio.app.core.ui.LocalScreenCovered.current
-    DisposableEffect(sideHandoffOwner, covered) {
-        if (!covered) {
-            RootNavFocus.registerBarSideHandoff(
-                sideHandoffOwner,
-                left = { tablesChipFocus.requestFocusLogged() },
-                right = { followPillFocus.requestFocusLogged() },
-            )
-        }
-        onDispose { RootNavFocus.unregisterBarSideHandoff(sideHandoffOwner) }
+    // The mini player's own two pills are drawn between the bar's right end and the Follow pill, so
+    // the group's leftmost control is the one the bar steps into — and the one Left steps back out
+    // of. Pointing at the Follow pill skipped them: the expand and close buttons could not be
+    // reached with the keys at all while a stream played in the corner.
+    val expandPillFocus = remember { FocusRequester() }
+    val closePillFocus = remember { FocusRequester() }
+    val refreshPillFocus = remember { FocusRequester() }
+    val rightGroupEdgeFocus = if (showExpandPlayer) expandPillFocus else followPillFocus
+    // Where each control of this row is drawn, so a control below it (the calendar's Up) can reach
+    // the one over it: the chips on the left, the corner player's buttons and the picker on the
+    // right, and nothing under the middle, where the floating bar answers instead.
+    val controlBounds = remember { androidx.compose.runtime.mutableStateMapOf<Any, ClosedFloatingPointRange<Float>>() }
+    fun boundsOf(key: Any): Modifier = Modifier.onGloballyPositioned { coords ->
+        val bounds = coords.boundsInWindow()
+        controlBounds[key] = bounds.left.toFloat()..bounds.right.toFloat()
     }
+    com.nuvio.app.core.ui.HorizontalEntryHandoff { windowX ->
+        val hit = listOf(
+            mySportsChipFocus, allEventsChipFocus, tablesChipFocus,
+            expandPillFocus, closePillFocus, followPillFocus, refreshPillFocus,
+        ).firstOrNull { controlBounds[it]?.contains(windowX) == true } ?: return@HorizontalEntryHandoff false
+        com.nuvio.app.core.ui.requestFocusInsideGroup(headerBandFocus, hit)
+    }
+    val leftLeavesTheGroup: (androidx.compose.ui.input.key.KeyEvent) -> Boolean = { ev ->
+        arrowFocusDirection(ev) == FocusDirection.Left && RootNavFocus.enterTopBarEnd(left = false)
+    }
+    // The chips and pills are the two halves of the row the floating bar sits in the middle of.
+    // Registering them lets the bar's ends step into them; the helper drops the registration while
+    // the page is covered, so a screen behind another cannot answer for it.
+    com.nuvio.app.core.ui.BarSideFocusHandoff(
+        // Enter the band first: its focusRestorer otherwise redirects a direct request back to
+        // the last chip the person used, so Left/Right from the bar appeared to do nothing.
+        left = { com.nuvio.app.core.ui.requestFocusInsideGroup(headerBandFocus, tablesChipFocus) },
+        right = {
+            com.nuvio.app.core.ui.requestFocusInsideGroup(headerBandFocus, rightGroupEdgeFocus)
+        },
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -448,6 +500,7 @@ private fun SportsHeaderBand(
                     label = if (followedCount == 0) "★ My Sports" else "★ My Sports ($followedCount)",
                     selected = mySportsOnly,
                     focusRequester = mySportsChipFocus,
+                    modifier = boundsOf(mySportsChipFocus),
                     onClick = onToggleMySports,
                 )
             }
@@ -456,6 +509,7 @@ private fun SportsHeaderBand(
                     label = if (liveCount > 0) "All Events · $liveCount live" else "All Events",
                     selected = !mySportsOnly,
                     focusRequester = allEventsChipFocus,
+                    modifier = boundsOf(allEventsChipFocus),
                     onClick = { if (mySportsOnly) onToggleMySports() },
                 )
             }
@@ -464,10 +518,13 @@ private fun SportsHeaderBand(
                     label = "Tables",
                     selected = tablesMode,
                     focusRequester = tablesChipFocus,
-                    // The bar is drawn to the right of these chips: Right keeps walking into it
-                    // instead of stepping over it to the pills on its other side.
+                    modifier = boundsOf(tablesChipFocus),
+                    // The bar is drawn to the right of these chips: Right enters it at its left end
+                    // (Home), so the icons read on from there instead of the focus stepping over the
+                    // bar to the pills on its other side.
                     onExtraKey = { ev ->
-                        arrowFocusDirection(ev) == FocusDirection.Right && RootNavFocus.enterTopBar()
+                        arrowFocusDirection(ev) == FocusDirection.Right &&
+                            RootNavFocus.enterTopBarEnd(left = true)
                     },
                     onClick = { onSelectTablesMode(!tablesMode) },
                 )
@@ -477,24 +534,35 @@ private fun SportsHeaderBand(
             SportsHeaderPill(
                 label = "Expand player",
                 icon = Icons.Rounded.Fullscreen,
+                focusRequester = expandPillFocus,
+                modifier = boundsOf(expandPillFocus),
+                // The group's left edge, beside the bar's right end: Left goes back into the bar.
+                onExtraKey = leftLeavesTheGroup,
                 onClick = onExpandPlayer,
             )
             SportsHeaderPill(
                 label = "Close mini player",
                 icon = Icons.Rounded.Close,
+                focusRequester = closePillFocus,
+                modifier = boundsOf(closePillFocus),
                 onClick = onClosePlayer,
             )
         }
         SportsHeaderPill(
             label = "✎ Follow Teams & Leagues",
             focusRequester = followPillFocus,
-            // …and Left from the first pill on the bar's other side comes back into it.
-            onExtraKey = { ev ->
-                arrowFocusDirection(ev) == FocusDirection.Left && RootNavFocus.enterTopBar()
-            },
+            modifier = boundsOf(followPillFocus),
+            // Only the group's left edge goes back into the bar; with the mini player up that is the
+            // expand button, so this pill keeps its normal Left (to the close button beside it).
+            onExtraKey = if (showExpandPlayer) null else leftLeavesTheGroup,
             onClick = onOpenPicker,
         )
-        SportsHeaderPill(label = "↻", onClick = onRefresh)
+        SportsHeaderPill(
+            label = "↻",
+            focusRequester = refreshPillFocus,
+            modifier = boundsOf(refreshPillFocus),
+            onClick = onRefresh,
+        )
     }
 }
 
@@ -504,13 +572,14 @@ private fun SportsHeaderPill(
     onClick: () -> Unit,
     icon: ImageVector? = null,
     focusRequester: FocusRequester? = null,
+    modifier: Modifier = Modifier,
     onExtraKey: ((KeyEvent) -> Boolean)? = null,
 ) {
     val tokens = MaterialTheme.nuvio
     val interaction = rememberSportsInteraction(baseScale = 1.05f, label = "sportsHeaderPillZoom")
     val shape = RoundedCornerShape(50)
     Box(
-        modifier = Modifier
+        modifier = modifier
             .sportsInteractive(
                 state = interaction,
                 focusRequester = focusRequester,

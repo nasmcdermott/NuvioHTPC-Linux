@@ -1238,6 +1238,9 @@ internal class NativePlayerController(
             ownsWindow = window != null && linuxWindowFocus?.focused == true &&
                 (event.component as? java.awt.Window ?: SwingUtilities.getWindowAncestor(event.component)) === window,
             dismissKey = AppShortcutsRepository.keyCode(AppShortcutAction.DismissOverlay),
+            // In the corner box the player is a small pane of the app: Back is the app's, and the
+            // player's own Back action already declines it there (PlayerControlsAction.Back).
+            inCornerBox = com.nuvio.app.features.player.PlayerBrowsePip.active.value,
         ) {
             // The HDR session has no WebKit HUD to close panels in; Escape is Back there.
             val hudless = desktopPictureInPictureState.value || linuxHdr?.activeHdrHandle != null

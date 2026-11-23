@@ -13,9 +13,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -73,7 +79,8 @@ internal fun SportsDateStrip(
     selected: String,
     bandRequester: FocusRequester,
     onSelect: (String) -> Unit,
-    onUp: () -> Boolean,
+    /** [focusedWindowX] is the focused day's centre in window space: Up may ask the bar by position. */
+    onUp: (focusedWindowX: Float?) -> Boolean,
     onDown: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -81,6 +88,9 @@ internal fun SportsDateStrip(
     val pillRequesters = remember { HashMap<String, FocusRequester>() }
     fun requesterFor(dayKey: String): FocusRequester = pillRequesters.getOrPut(dayKey) { FocusRequester() }
     val selectedRequester = requesterFor(selected)
+    // Where the day that holds the keys is, so Up can go to the bar icon nearest it, the way the
+    // Settings rail asks the sidebar for its nearest row by height.
+    var focusedWindowX by remember { mutableStateOf<Float?>(null) }
 
     LazyRow(
         modifier = modifier
@@ -88,7 +98,7 @@ internal fun SportsDateStrip(
             .sportsHorizontalBand(
                 bandRequester = bandRequester,
                 fallbackRequester = selectedRequester,
-                onUp = onUp,
+                onUp = { onUp(focusedWindowX) },
                 onDown = onDown,
             ),
         horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
@@ -100,6 +110,7 @@ internal fun SportsDateStrip(
                 day = day,
                 selected = day.day == selected,
                 focusRequester = requesterFor(day.day),
+                onFocusedWindowX = { focusedWindowX = it },
                 onClick = { onSelect(day.day) },
             )
         }
@@ -111,6 +122,7 @@ private fun SportsDayPill(
     day: SportsDay,
     selected: Boolean,
     focusRequester: FocusRequester,
+    onFocusedWindowX: (Float) -> Unit,
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -123,10 +135,13 @@ private fun SportsDayPill(
         tokens.colors.textSecondary
     }
     val borderWidth = if (interaction.focused) 2.dp else tokens.borders.hairline
+    var centerX by remember { mutableStateOf(0f) }
 
     Column(
         modifier = Modifier
             .widthIn(min = 84.dp)
+            .onGloballyPositioned { centerX = it.boundsInWindow().center.x }
+            .onFocusChanged { if (it.isFocused) onFocusedWindowX(centerX) }
             .sportsInteractive(
                 state = interaction,
                 focusRequester = focusRequester,

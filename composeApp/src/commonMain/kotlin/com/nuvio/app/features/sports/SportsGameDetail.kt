@@ -113,6 +113,41 @@ internal fun sportsPeriodOrder(period: String): Int {
 }
 
 /**
+ * Puts play-by-play in newest-first order before it is split into periods. ESPN stamps every play
+ * with a wall-clock instant, which is the one key that does not depend on whether the feed listed
+ * the plays oldest-first or newest-first; sorting on it fixes a live summary whose drives arrive in
+ * reverse. Feeds without wall clocks fall back to their own direction, read from the period on the
+ * first and last play.
+ */
+internal fun playByPlayNewestFirst(plays: List<PlayByPlayEntry>): List<PlayByPlayEntry> {
+    if (plays.isEmpty()) return plays
+    if (plays.all { it.wallclockMs != null }) {
+        // Later feed entries win a wall-clock tie, so a same-second "END GAME" follows the play
+        // it ends rather than being left above it by a stable sort.
+        return plays.withIndex()
+            .sortedWith(
+                compareByDescending<IndexedValue<PlayByPlayEntry>> { it.value.wallclockMs }
+                    .thenByDescending { it.index },
+            )
+            .map { it.value }
+    }
+    val chronological = sportsPeriodOrder(plays.first().period.orEmpty()) <=
+        sportsPeriodOrder(plays.last().period.orEmpty())
+    return if (chronological) plays.asReversed() else plays
+}
+
+/** Play-by-play split into periods, newest first inside every period too. */
+internal fun playByPlayPeriodsNewestFirst(
+    plays: List<PlayByPlayEntry>,
+    limit: Int? = null,
+): List<Pair<String, List<PlayByPlayEntry>>> {
+    val newestFirst = playByPlayNewestFirst(plays).let { if (limit != null) it.take(limit) else it }
+    return newestFirst
+        .groupBy { it.period?.takeIf(String::isNotBlank) ?: "Other" }
+        .toList()
+}
+
+/**
  * A game's detail page: live scoreboard, period linescores, quick IPTV playback & channel matching
  * controls, and live-updating scoring summary + team/player box scores.
  */
@@ -255,16 +290,10 @@ internal fun SportsGameDetail(
         }
     }
 
-    val playByPlayEntries = if (event.isLive) {
-        summary?.playByPlay.orEmpty().asReversed().take(MAX_LIVE_PLAY_BY_PLAY)
-    } else {
-        summary?.playByPlay.orEmpty()
-    }
-    val playPeriodGroups = playByPlayEntries
-        .groupBy { it.period?.takeIf(String::isNotBlank) ?: "Other" }
-        .toList()
-        // Newest period first — the 4th quarter above the 1st — for live and finished games alike.
-        .sortedByDescending { sportsPeriodOrder(it.first) }
+    val playPeriodGroups = playByPlayPeriodsNewestFirst(
+        plays = summary?.playByPlay.orEmpty(),
+        limit = MAX_LIVE_PLAY_BY_PLAY.takeIf { event.isLive },
+    )
     val playPeriodNames = playPeriodGroups.map { it.first }
     val periodFocusRequesters = remember(event.id, playPeriodNames) {
         List(playPeriodNames.size) { index -> if (index == 0) playByPlayFocus else FocusRequester() }
@@ -770,11 +799,9 @@ internal fun SportsGameDetail(
                                                     },
                                                 )
                                             }
-                                            val visiblePeriodPlays = if (periodExpanded) periodPlays else if (event.isLive) {
-                                                periodPlays.take(5)
-                                            } else {
-                                                periodPlays.takeLast(5)
-                                            }
+                                            // Every period is newest first now, live or final, so
+                                            // its first five are its latest five.
+                                            val visiblePeriodPlays = if (periodExpanded) periodPlays else periodPlays.take(5)
                                             visiblePeriodPlays.forEach { play ->
                                                 SportsPlayByPlayRow(
                                                     play = play,

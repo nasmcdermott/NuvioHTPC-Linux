@@ -69,18 +69,6 @@ class SettingsNavTest {
     }
 
     @Test
-    fun onlyDownHasATraversalFallback() {
-        // Up, Left and Right are the page's outer edges. Rather than wrapping to Previous/Next
-        // (which landed on the context panel or dropped onto the row below), they stop where
-        // they are. Down keeps its fallback for lazy lists.
-        assertNull(settingsArrowTraversalFallback(FocusDirection.Up))
-        assertNull(settingsArrowTraversalFallback(FocusDirection.Left))
-        assertNull(settingsArrowTraversalFallback(FocusDirection.Right))
-        assertEquals(FocusDirection.Next, settingsArrowTraversalFallback(FocusDirection.Down))
-        assertNull(settingsArrowTraversalFallback(FocusDirection.Enter))
-    }
-
-    @Test
     fun bridgeReportsHandledOnlyWhilePageRegistered() {
         assertFalse(SettingsBackBridge.handle(), "nothing registered: Back is not handled here")
         var calls = 0

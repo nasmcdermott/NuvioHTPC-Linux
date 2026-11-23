@@ -1586,6 +1586,13 @@ private fun MainAppContent(
         var previousDestinationWasTabs by remember { mutableStateOf<Boolean?>(null) }
         LaunchedEffect(currentBackStackEntry) {
             val destinationIsTabs = currentBackStackEntry?.destination?.hasRoute<TabsRoute>() == true
+            // A route closed over the tabs (the player, a details page): whatever held focus inside it
+            // is gone with it. Ask the screen on top to take the keys, so the window is never left
+            // with none — which is what made every key, Back included, go nowhere until an arrow was
+            // pressed. KeyLayers.settle is the mechanism designed for this and had no caller.
+            if (destinationIsTabs && previousDestinationWasTabs == false) {
+                com.nuvio.app.core.ui.KeyLayers.settle("returned to the tabs")
+            }
             if (
                 destinationIsTabs &&
                 previousDestinationWasTabs == false &&
@@ -1611,6 +1618,18 @@ private fun MainAppContent(
                     navigateToContentCount++
                 } else {
                     searchFocusRequestCount++
+                }
+            } else if (destinationIsTabs && previousDestinationWasTabs == false) {
+                // The pages of their own - Sports, Live TV, YouTube, Music, Settings - take the keys
+                // themselves, through the entry each registers. Without asking them, closing a live
+                // sports stream (or any other pushed route over them) left the window with no
+                // focused node at all, and every key went nowhere until something was clicked:
+                // Back included, which is what "Back no longer backs" was.
+                // The layer is composed as this destination becomes active, so the entry may not be
+                // there yet: retry briefly rather than give up on the first frame.
+                repeat(20) {
+                    if (RootNavFocus.enterPageContent()) return@LaunchedEffect
+                    kotlinx.coroutines.delay(40)
                 }
             }
             previousDestinationWasTabs = destinationIsTabs
@@ -8244,14 +8263,39 @@ val youTubeMiniPlayerShown = youTubeBrowsing
         topBarHasFocus = { barHasFocus },
         pageOwner = { latestSelectedTab },
     )
+    fun enterBarAt(slot: Int) {
+        barIndex = slot.coerceIn(0, topBarSlots - 1)
+        if (!barHasFocus) {
+            if (MusicKeyboard.playerHasFocus()) RootNavFocus.forgetContentFocus()
+            else RootNavFocus.rememberContentFocus(latestSelectedTab, focusManager)
+        }
+        runCatching { barFocusRequester.requestFocus() }
+    }
+    // The bar's own window box, so a page control that asks for the bar by position (the Sports
+    // calendar's Up) lands on the icon that is really nearest it, as the Settings rail does with the
+    // sidebar's rows.
+    var barLeftPx by remember { mutableStateOf(0f) }
+    var barWidthPx by remember { mutableStateOf(0f) }
     LaunchedEffect(barFocusRequester) {
-        RootNavFocus.topBarEnterRequests.collect {
-            barIndex = navEntrySlot(latestEntries, latestSelectedTab)
-            if (!barHasFocus) {
-                if (MusicKeyboard.playerHasFocus()) RootNavFocus.forgetContentFocus()
-                else RootNavFocus.rememberContentFocus(latestSelectedTab, focusManager)
+        launch {
+            RootNavFocus.topBarEnterRequests.collect {
+                enterBarAt(navEntrySlot(latestEntries, latestSelectedTab))
             }
-            runCatching { barFocusRequester.requestFocus() }
+        }
+        launch {
+            RootNavFocus.topBarEnterAtRequests.collect { enterBarAt(it) }
+        }
+        launch {
+            RootNavFocus.positionTopBarEnterRequests.collect { windowX ->
+                enterBarAt(
+                    com.nuvio.app.features.navbar.nearestTopBarSlot(
+                        windowX = windowX,
+                        barLeftPx = barLeftPx,
+                        barWidthPx = barWidthPx,
+                        slotCount = topBarSlots,
+                    ),
+                )
+            }
         }
     }
     // What Select on a slot does: the same thing that icon's click does, so the keys and the pointer
@@ -8618,44 +8662,29 @@ val youTubeMiniPlayerShown = youTubeBrowsing
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = 6.dp, vertical = 4.dp)
+                            // Where the icons really are, for a page that asks the bar by position.
+                            .onGloballyPositioned { coords ->
+                                val bounds = coords.boundsInWindow()
+                                barLeftPx = bounds.left
+                                barWidthPx = bounds.width
+                            }
                             .focusRequester(barFocusRequester)
                             // Before focusable(), as every focus observer here is: Compose only
                             // reports focus to one that sits outside the focus target.
                             .onFocusChanged { barHasFocus = it.hasFocus }
                             .focusable()
-                            // At either end of the row, step into the page icons drawn beside the
-                            // bar (YouTube's section tabs and its own search, the Sports page's
-                            // chips and pills) instead of pinning the keys to the first/last tab.
+                            // At either end of the row, step into whatever control the page draws
+                            // beside the bar: YouTube's section tabs and search, the Sports page's
+                            // chips and pills, Live TV's genre rail and search. A page that names
+                            // its side control takes the key itself (RootNavFocus); otherwise the
+                            // focus system looks for the next control, and finding none keeps the
+                            // key on the bar instead of wrapping into the content.
                             .onPreviewKeyEvent { event ->
                                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                                // The Sports page's own header row shares this line: its chips sit
-                                // left of the bar and its Follow/Refresh pills right of it. Leaving
-                                // the bar sideways must reach them, or Left/Right at either end is a
-                                // dead end.
-                                val sideIconsBesideBar = selectedTab == AppScreenTab.YouTube ||
-                                    selectedTab == AppScreenTab.Sports
-                                // At the right end of an ordinary tab's bar there is nothing beside
-                                // it to move to. Keep the key on the bar; releasing it here let
-                                // Compose's traversal jump into the poster/card rows below.
-                                if (com.nuvio.app.core.ui.topBarRightEdgeStaysPut(
-                                        key = event.navigationKey(),
-                                        index = barIndex,
-                                        count = topBarSlots,
-                                        sideIconsBesideBar = sideIconsBesideBar,
-                                    )
-                                ) {
-                                    return@onPreviewKeyEvent true
-                                }
-                                // On the other tabs the edge keys stay on the bar as they always did.
-                                if (!sideIconsBesideBar) return@onPreviewKeyEvent false
                                 val key = event.navigationKey()
                                 val leaveLeft = key == Key.DirectionLeft && barIndex <= 0
                                 val leaveRight = key == Key.DirectionRight && barIndex >= topBarSlots - 1
                                 if (!leaveLeft && !leaveRight) return@onPreviewKeyEvent false
-                                // A page beside the bar can name the control its end steps into
-                                // (the Sports page's chips and pills, through RootNavFocus). YouTube
-                                // has no handoff of its own and leans on the focus system; either
-                                // way the key stays off the content rows under the bar.
                                 RootNavFocus.focusBarSide(left = leaveLeft) ||
                                     focusManager.moveFocus(
                                         if (leaveLeft) FocusDirection.Left else FocusDirection.Right,
@@ -8939,10 +8968,11 @@ private fun RowScope.NavQuadrant(
             .height(NavBarItemHeight)
             .clip(shape)
             // The ring marks the icon the arrow keys are on, as the sidebar's profile row does: the
-            // keys live on the bar, not on the page behind it.
+            // keys live on the bar, not on the page behind it. It follows keyboard focus even when
+            // the pointer happens to rest on the same icon (the one that opened Tonight, say):
+            // hover alone only zooms the glyph.
             .then(
-                // Hover zooms the glyph; only keyboard/D-pad focus draws the ring.
-                if (focused && !hovered) {
+                if (focused) {
                     Modifier.border(2.dp, Color(0xFF9ECAFF).copy(alpha = .9f), shape)
                 } else {
                     Modifier

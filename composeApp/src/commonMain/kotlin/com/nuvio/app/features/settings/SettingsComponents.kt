@@ -13,7 +13,9 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
+import com.nuvio.app.core.ui.NavAction
 import com.nuvio.app.core.ui.arrowFocusDirection
+import com.nuvio.app.core.ui.navAction
 import com.nuvio.app.core.ui.requestFocusLogged
 import kotlinx.coroutines.delay
 import androidx.compose.material3.CircularProgressIndicator
@@ -734,7 +736,7 @@ private fun horizontalNudge(event: androidx.compose.ui.input.key.KeyEvent): Int?
     }
 
 private fun isEnterDown(event: androidx.compose.ui.input.key.KeyEvent): Boolean =
-    event.type == KeyEventType.KeyDown && (event.key == Key.Enter || event.key == Key.NumPadEnter)
+    event.type == KeyEventType.KeyDown && event.navAction() == NavAction.Select
 
 /** Where the pointer is while a settings slider is being dragged, for its value bubble. */
 @Stable
@@ -2540,9 +2542,12 @@ internal fun SettingsMenuPanel(
                     // Backspace closes; Left/Right are kept so they do not wander off the menu.
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        if (event.key == Key.Escape || event.key == Key.Backspace) {
-                            onDismissRequest()
-                            return@onPreviewKeyEvent true
+                        when (event.navAction()) {
+                            NavAction.Back, NavAction.Dismiss -> {
+                                onDismissRequest()
+                                return@onPreviewKeyEvent true
+                            }
+                            else -> Unit
                         }
                         when (arrowFocusDirection(event)) {
                             FocusDirection.Up -> { menuFocusManager.moveFocus(FocusDirection.Previous); true }

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.iptv
 
+import com.nuvio.app.core.ui.RootNavFocus
 import com.nuvio.app.core.ui.keyLayer
 import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.smoothBorder
@@ -23,12 +24,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -61,6 +65,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -144,6 +149,15 @@ fun rememberLiveTvTabVisible(): Boolean {
 
 /** Where the arrow keys are: the tab is driven by one virtual focus, like the Calendar. */
 private enum class IptvZone { Header, Regions, Sidebar, Channels }
+
+/**
+ * Whether Right in the category rail belongs to the floating bar or to the page content. A rail
+ * row whose top is above the first page row (the header) sits beside the bar; one below it sits
+ * beside the channel rows/wall. This is spatial, so window size, header height and scroll do not
+ * need special cases for "the top two entries".
+ */
+internal fun iptvSidebarRightLeavesForBar(itemTop: Float?, pageHeaderBottom: Float): Boolean =
+    itemTop == null || pageHeaderBottom <= 0f || itemTop < pageHeaderBottom
 
 private enum class IptvHeaderAction { Search, Regions, Guide, Refresh, Triage, Settings }
 
@@ -429,6 +443,10 @@ fun IptvScreen(
 
     val screenFocus = remember { FocusRequester() }
     val searchFocus = remember { FocusRequester() }
+    // Where the rail and the first page row sit, so Right in the rail can tell a row beside the
+    // floating bar (go up) from one beside the channel rows (go right into them).
+    var sidebarViewportTop by remember { mutableFloatStateOf(0f) }
+    var pageHeaderBottom by remember { mutableFloatStateOf(0f) }
     var searchFocused by remember { mutableStateOf(false) }
     var searchBounds by remember { mutableStateOf<Rect?>(null) }
     var rootOrigin by remember { mutableStateOf(Offset.Zero) }
@@ -623,6 +641,9 @@ fun IptvScreen(
     fun closeSearch() {
         filter = ""
         searchOpen = false
+        // Back out of the field into the channel rows, not onto an invisible page focus target.
+        keyboardActive = true
+        zone = if (hasContent) IptvZone.Channels else IptvZone.Sidebar
         screenFocus.requestFocusLogged()
     }
 
@@ -709,7 +730,12 @@ fun IptvScreen(
         }
         when (navKey) {
             Key.DirectionDown -> moveDown()
-            Key.DirectionUp -> moveUp()
+            Key.DirectionUp -> {
+                // The top row has nothing above it on the page, so let the tab host's hand-off take
+                // Up and enter the floating bar.
+                if (zone == IptvZone.Header) return false
+                moveUp()
+            }
             Key.PageDown, Key.PageUp -> {
                 val step = if (navKey == Key.PageDown) 10 else -10
                 when (zone) {
@@ -738,7 +764,16 @@ fun IptvScreen(
             Key.DirectionRight -> when (zone) {
                 IptvZone.Header -> headerIndex = (headerIndex + 1).coerceAtMost(headerActions.lastIndex)
                 IptvZone.Regions -> regionIndex = (regionIndex + 1).coerceAtMost(regions.size)
-                IptvZone.Sidebar -> if (hasContent) zone = IptvZone.Channels
+                // The rail's right neighbour depends on where the row is: one beside the floating
+                // bar steps up into the bar, one beside the channel rows/wall steps into them. This
+                // is geometric, not "top two entries are special": window sizes and header rows vary.
+                IptvZone.Sidebar -> {
+                    val item = sidebarState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == sidebarIndex }
+                    val itemTop = item?.let { sidebarViewportTop + it.offset }
+                    if (iptvSidebarRightLeavesForBar(itemTop, pageHeaderBottom) && RootNavFocus.enterTopBar()) Unit
+                    else if (hasContent) zone = IptvZone.Channels
+                    else zone = IptvZone.Header
+                }
                 // The guide's rows have no star; the list's star is one step right of its row.
                 IptvZone.Channels -> if (wallSection) {
                     wallCol = (wallCol + 1).coerceAtMost(((wallRows.getOrNull(wallRow)?.items?.size ?: 1) - 1).coerceAtLeast(0))
@@ -809,6 +844,31 @@ fun IptvScreen(
         return
     }
 
+    // The floating bar's ends step into the two things the tab draws beside it: the genre rail on
+    // the left and the channel search on the right. The rail's own Right and the search field's
+    // Left go back (RootNavFocus.enterTopBar), so the bar and the page hand the keys to each other.
+    com.nuvio.app.core.ui.BarSideFocusHandoff(
+        left = {
+            keyboardActive = true
+            zone = IptvZone.Sidebar
+            screenFocus.requestFocusLogged()
+        },
+        right = {
+            // Focus the header's Search button; opening the field is Select's job, not the bar's.
+            keyboardActive = true
+            zone = IptvZone.Header
+            headerIndex = headerActions.indexOf(IptvHeaderAction.Search).takeIf { it >= 0 } ?: 0
+            screenFocus.requestFocusLogged()
+        },
+    )
+    // On Now owns the line under the floating bar, so its wall starts where the bar does instead of
+    // a whole bar-row below it. Stage and triage keep the full padding passed by the app.
+    val wallTopPadding = if (wallSection && topChromePadding != null) {
+        WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + IptvWallTopOffset
+    } else {
+        topChromePadding ?: 24.dp
+    }
+
     val tokens = MaterialTheme.nuvio
     Row(
         modifier = modifier
@@ -843,6 +903,11 @@ fun IptvScreen(
                         Key.Escape -> {
                             if (filter.isEmpty()) closeSearch() else filter = ""
                             true
+                        }
+                        // Left of an empty search field is the bar's right end (Settings). With
+                        // text in it, Left belongs to the field's caret.
+                        Key.DirectionLeft -> {
+                            if (filter.isEmpty()) RootNavFocus.enterTopBarAt(Int.MAX_VALUE) else false
                         }
                         Key.DirectionDown, Key.Enter, Key.NumPadEnter -> {
                             keyboardActive = true
@@ -880,6 +945,7 @@ fun IptvScreen(
             selectedSection = section,
             focusedIndex = if (keyboardActive && zone == IptvZone.Sidebar) sidebarIndex else -1,
             listState = sidebarState,
+            onViewportTop = { sidebarViewportTop = it },
             onClick = { index, item ->
                 sidebarIndex = index
                 activateSidebar(item)
@@ -889,12 +955,13 @@ fun IptvScreen(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .padding(start = 8.dp, end = 32.dp, top = topChromePadding ?: 24.dp),
+                .padding(start = 8.dp, end = 32.dp, top = wallTopPadding),
         ) {
             val sectionTitle = sidebarItems.firstOrNull { it.section == section }?.label ?: allLabel
             IptvHeader(
                 title = sectionTitle,
                 actions = headerActions,
+                onBoundsBottom = { pageHeaderBottom = it },
                 focusedAction = if (keyboardActive && zone == IptvZone.Header) headerActions.getOrNull(headerIndex) else null,
                 loading = state.loading,
                 filter = filter,
@@ -1040,6 +1107,9 @@ fun IptvScreen(
 /** fork:live-tv-stage - the sidebar item that goes back to the stages. */
 private const val STAGE_SECTION = "__stage__"
 
+/** The wall's top line, 17dp below the status bar, is the floating bar's own top line. */
+private val IptvWallTopOffset = 17.dp
+
 private val IptvBackKeys = setOf(Key.Escape, Key.Back, Key.Backspace)
 
 private val IptvNavigationKeys = setOf(
@@ -1099,11 +1169,16 @@ private fun IptvSidebar(
     selectedSection: String,
     focusedIndex: Int,
     listState: LazyListState,
+    onViewportTop: (Float) -> Unit,
     onClick: (Int, IptvSidebarItem) -> Unit,
 ) {
     LazyColumn(
         state = listState,
-        modifier = Modifier.width(280.dp).fillMaxHeight().padding(start = 24.dp, end = 8.dp, top = 24.dp),
+        modifier = Modifier
+            .width(280.dp)
+            .fillMaxHeight()
+            .padding(start = 24.dp, end = 8.dp, top = 24.dp)
+            .onGloballyPositioned { onViewportTop(it.boundsInWindow().top) },
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         itemsIndexed(items, key = { _, item -> item.key }) { index, item ->
@@ -1177,6 +1252,7 @@ private fun IptvSidebarEntry(
 private fun IptvHeader(
     title: String,
     actions: List<IptvHeaderAction>,
+    onBoundsBottom: (Float) -> Unit,
     focusedAction: IptvHeaderAction?,
     loading: Boolean,
     filter: String,
@@ -1195,7 +1271,11 @@ private fun IptvHeader(
 ) {
     val tokens = MaterialTheme.nuvio
     Row(
-        modifier = Modifier.fillMaxWidth().height(48.dp).padding(bottom = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .padding(bottom = 4.dp)
+            .onGloballyPositioned { onBoundsBottom(it.boundsInWindow().bottom) },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

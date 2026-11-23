@@ -49,3 +49,21 @@ internal data class SettingsBarSlotLayout(
 
     val slotCount: Int get() = entryCount + 1 + if (musicShown) 1 else 0
 }
+
+/**
+ * The bar slot whose box contains [windowX], for a page control that asks the bar by position (the
+ * Sports calendar's Up). The bar's own window bounds are passed in, so a bar drawn narrower, or
+ * scrolled anywhere across the top, still answers for where its icons really are. Out-of-range
+ * positions clamp to the first or last icon.
+ */
+internal fun nearestTopBarSlot(
+    windowX: Float,
+    barLeftPx: Float,
+    barWidthPx: Float,
+    slotCount: Int,
+): Int {
+    if (slotCount <= 1 || barWidthPx <= 0f) return 0
+    val slotWidth = barWidthPx / slotCount
+    val index = ((windowX - barLeftPx) / slotWidth).toInt()
+    return index.coerceIn(0, slotCount - 1)
+}

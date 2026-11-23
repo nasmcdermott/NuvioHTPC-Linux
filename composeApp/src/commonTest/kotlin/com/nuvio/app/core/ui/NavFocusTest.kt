@@ -300,18 +300,6 @@ class NavFocusTest {
     }
 
     @Test
-    fun rightAtTheLastTopBarSlotStaysOnTheBarUnlessSideIconsExist() {
-        // Ordinary tabs: the last slot is the right edge, so Right is consumed there instead of
-        // letting focus traversal pick a poster or card below the bar.
-        assertTrue(topBarRightEdgeStaysPut(Key.DirectionRight, index = 3, count = 4, sideIconsBesideBar = false))
-        assertFalse(topBarRightEdgeStaysPut(Key.DirectionRight, index = 2, count = 4, sideIconsBesideBar = false))
-        assertFalse(topBarRightEdgeStaysPut(Key.DirectionLeft, index = 3, count = 4, sideIconsBesideBar = false))
-        assertFalse(topBarRightEdgeStaysPut(Key.DirectionRight, index = 0, count = 0, sideIconsBesideBar = false))
-        // YouTube draws its own tabs and search beside the bar, so Right still leaves for them.
-        assertFalse(topBarRightEdgeStaysPut(Key.DirectionRight, index = 3, count = 4, sideIconsBesideBar = true))
-    }
-
-    @Test
     fun theTopBarWalksSidewaysAndLeavesDownwards() {
         assertEquals(TopBarKeyAction.Move(2), topBarKeyAction(Key.DirectionRight, 1, 4))
         assertEquals(TopBarKeyAction.Move(0), topBarKeyAction(Key.DirectionLeft, 1, 4))
@@ -402,6 +390,34 @@ class NavFocusTest {
             assertFalse(RootNavFocus.focusBarSide(left = true))
         } finally {
             RootNavFocus.unregisterBarSideHandoff(owner)
+        }
+    }
+
+    @Test
+    fun aStaleHandoffDoesNotBlockThePageThatCanTakeTheBarSide() {
+        val stale = Any()
+        val visible = Any()
+        try {
+            RootNavFocus.registerBarSideHandoff(stale, left = { false }, right = { false })
+            RootNavFocus.registerBarSideHandoff(visible, left = { true }, right = { true })
+
+            // The newest owner is asked first; when it declines, the one under it still answers.
+            assertTrue(RootNavFocus.focusBarSide(left = false))
+            assertTrue(RootNavFocus.focusBarSide(left = true))
+
+            // A throwing owner declines the same way, so the next owner is still reached.
+            RootNavFocus.unregisterBarSideHandoff(visible)
+            val throwing = Any()
+            RootNavFocus.registerBarSideHandoff(throwing, left = { error("gone") }, right = { error("gone") })
+            try {
+                RootNavFocus.registerBarSideHandoff(visible, left = { true }, right = { true })
+                assertTrue(RootNavFocus.focusBarSide(left = true))
+            } finally {
+                RootNavFocus.unregisterBarSideHandoff(throwing)
+            }
+        } finally {
+            RootNavFocus.unregisterBarSideHandoff(stale)
+            RootNavFocus.unregisterBarSideHandoff(visible)
         }
     }
 }

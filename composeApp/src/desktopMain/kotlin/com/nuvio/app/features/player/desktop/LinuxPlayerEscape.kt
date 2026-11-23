@@ -12,9 +12,18 @@ internal class LinuxPlayerEscape(private val os: DesktopHostOs) {
         event: KeyEvent,
         ownsWindow: Boolean,
         dismissKey: Int,
+        /** The player is a corner box over the app (browse PiP), not the screen: the keys are the app's. */
+        inCornerBox: Boolean = false,
         escape: () -> Unit,
     ): Boolean {
         if (os != DesktopHostOs.LINUX || event.isConsumed) return false
+        // fork:pip-browse - the corner box is a pane of the app around it, so Back belongs to that
+        // app, as it does around YouTube's mini player. Consumed here it hid a HUD nobody could
+        // see and never reached the page: Back looked dead until the box was closed.
+        if (inCornerBox) {
+            reset()
+            return false
+        }
         if (!ownsWindow) {
             reset()
             return false
