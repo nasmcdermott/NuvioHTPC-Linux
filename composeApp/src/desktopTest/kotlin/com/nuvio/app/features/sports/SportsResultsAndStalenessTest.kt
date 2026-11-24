@@ -181,7 +181,7 @@ class SportsResultsAndStalenessTest {
         // Test matches legitimately run for days; the long-window clamp must not end them.
         val cricket = SportsEvent(
             id = "c",
-            leagueId = "cricket/8039",
+            leagueId = "cricket/8048",
             startMs = now - 30 * 60 * 60_000L, // 30 hours ago
             state = GameState.LIVE,
             away = GameSide(Team("1", "England", "England", "ENG")),
@@ -239,8 +239,20 @@ class SportsResultsAndStalenessTest {
     fun `never fetched is stale, and a live today snapshot inside its TTL is not`() {
         assertTrue(SportsRepository.daySnapshotStale(yesterday, emptyList(), 0L, now))
         assertTrue(
-            !SportsRepository.daySnapshotStale(today, snapshotGames(GameState.LIVE), now - 10_000L, now),
-            "today's own 30-second TTL already governs its live scoreboard",
+            !SportsRepository.daySnapshotStale(today, snapshotGames(GameState.LIVE), now - 5_000L, now),
+            "today's own 10-second TTL already governs its live scoreboard",
         )
+        assertTrue(
+            SportsRepository.daySnapshotStale(today, snapshotGames(GameState.LIVE), now - 15_000L, now),
+            "a live scoreboard older than 10 s is fetched again",
+        )
+    }
+
+    @Test
+    fun `today with nothing in progress is kept for a minute, not ten seconds`() {
+        // Nothing is being played, so only a kick-off or a final whistle can change the day; the
+        // catalog as a whole can be asked at that pace.
+        assertTrue(!SportsRepository.daySnapshotStale(today, snapshotGames(GameState.PRE), now - 45_000L, now))
+        assertTrue(SportsRepository.daySnapshotStale(today, snapshotGames(GameState.PRE), now - 61_000L, now))
     }
 }

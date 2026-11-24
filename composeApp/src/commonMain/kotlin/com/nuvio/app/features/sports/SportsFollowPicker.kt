@@ -192,7 +192,10 @@ internal fun SportsFollowPicker(
             modifier = Modifier
                 .fillMaxWidth()
                 .onPreviewKeyEvent { event ->
-                    val isDown = event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown
+                    // navigationKey() rather than the physical key, so a rebound Move Down still
+                    // opens the first result (see NavigationActionRatchetTest).
+                    val isDown = event.type == KeyEventType.KeyDown &&
+                        event.navigationKey() == Key.DirectionDown
                     // Only Escape counts as Back in here: Backspace still deletes characters while
                     // the box has them, and the dialog's own Back declines while a field holds the
                     // keys (see dismissOnBackKey), so Escape is the one press that would otherwise

@@ -400,6 +400,8 @@ internal fun SportsScoreRow(
     event: SportsEvent,
     league: League?,
     hideScores: Boolean,
+    /** The league's short name, for a row inside a section grouped by sport rather than by league. */
+    leagueTag: String? = null,
     followedSideIds: Set<String> = emptySet(),
     matchedChannelName: String? = null,
     focusRequester: FocusRequester? = null,
@@ -451,6 +453,17 @@ internal fun SportsScoreRow(
     ) {
         // Time for a scheduled game, the running clock for a live one, Final for a past one.
         SportsStatusBadge(event, hideScores = hideScores)
+
+        if (!leagueTag.isNullOrBlank()) {
+            Text(
+                text = leagueTag,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = tokens.colors.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
 
         if (isFieldEvent) {
             Text(

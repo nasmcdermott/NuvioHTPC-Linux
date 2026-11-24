@@ -2,6 +2,7 @@ package com.nuvio.app.features.sports
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.httpGetText
+import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -21,6 +22,17 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
+ * How this client asks. ESPN answers a browser-shaped request normally and treats a bare library
+ * agent more like a scraper — an occasional refusal that the page reports as "could not refresh",
+ * on a feed that is unofficial to begin with. The desktop build of the reference app sends the same
+ * shape of request.
+ */
+private val ESPN_HEADERS = mapOf(
+    "Accept" to "application/json",
+    "User-Agent" to "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+)
+
+/**
  * The public, keyless scoreboard feed.
  *
  * Five addresses cover scores, schedules, teams, a game's detail and a league table:
@@ -35,7 +47,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * cannot be parsed at all throws, so [SportsRepository] can show a failure instead of an empty day.
  */
 internal class EspnSportsFeed(
-    private val get: suspend (String) -> String = { httpGetText(it) },
+    private val get: suspend (String) -> String = { httpGetTextWithHeaders(it, ESPN_HEADERS) },
 ) : SportsFeed {
 
     private val log = Logger.withTag("SportsFeed")

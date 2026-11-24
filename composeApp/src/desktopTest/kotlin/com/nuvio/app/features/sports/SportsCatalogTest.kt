@@ -103,12 +103,34 @@ class SportsCatalogTest {
         // Named so a catalog edit that drops one is a test failure, not a quiet disappearance.
         listOf(
             "football/nfl", "football/college-football",
-            "basketball/nba", "basketball/wnba",
+            "basketball/nba", "basketball/wnba", "basketball/mens-college-basketball",
             "hockey/nhl", "baseball/mlb",
             "soccer/eng.1", "soccer/uefa.champions",
-            "racing/f1", "golf/pga", "tennis/atp", "mma/ufc",
+            "racing/f1", "racing/irl", "golf/pga", "golf/lpga", "tennis/atp", "tennis/wta",
         ).forEach { id ->
             assertNotNull(SportsCatalog.league(id), "expected league $id in the catalog")
+        }
+    }
+
+    @Test
+    fun `the fighting group carries the MMA promotions, not one league standing for the sport`() {
+        val fighting = SportsCatalog.leagues.filter { it.sport == Sport.FIGHTING }
+
+        assertTrue(fighting.size >= 3, "Fighting should list several promotions: ${fighting.map { it.id }}")
+        listOf("mma/ufc", "mma/pfl").forEach { id ->
+            assertNotNull(fighting.firstOrNull { it.id == id }, "expected $id in the Fighting group")
+        }
+    }
+
+    @Test
+    fun `every sport the catalog offers has at least one league, so no chip is empty`() {
+        // sportsOf() drives the chips, so a sport in the enum with no league simply never appears.
+        val covered = SportsCatalog.sportsOf(SportsCatalog.leagues)
+
+        listOf(Sport.AMERICAN_FOOTBALL, Sport.BASKETBALL, Sport.HOCKEY, Sport.BASEBALL, Sport.FOOTBALL,
+            Sport.RUGBY, Sport.FIGHTING, Sport.RACING, Sport.GOLF, Sport.TENNIS, Sport.CRICKET,
+            Sport.AUSSIE_RULES, Sport.VOLLEYBALL, Sport.LACROSSE).forEach { sport ->
+            assertTrue(sport in covered, "no league covers $sport, so it gets no chip")
         }
     }
 }

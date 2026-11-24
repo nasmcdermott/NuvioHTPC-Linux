@@ -184,13 +184,30 @@ internal fun SportsScreen(
     // effect rather than stacking a second loop alongside it.
     LaunchedEffect(selectedDay, visibleLeagues) {
         val isToday = selectedDay == SportsRepository.today()
+        // Three paces, so the catalog can be as long as it likes without multiplying what ESPN
+        // sees: a league with a game in progress is asked every round (10 s), one whose game is
+        // near enough to matter (starting, or only just finished) once every NEAR_ROUNDS (a
+        // minute), and one with nothing on that day once every COLD_ROUNDS (five minutes — an
+        // empty scoreboard does not change). A league whose last answer failed is backed off to the
+        // middle pace whatever it holds.
+        var round = 0
         while (true) {
-            visibleLeagues.forEach { SportsRepository.refresh(it.id, selectedDay) }
-            // The provider rewrites a game's clock only when it stops (a score, a timeout, a dead
-            // ball), roughly once a minute, so polling every second buys nothing; ~30 s tracks a
-            // live score, clock and play-by-play without re-rendering the page between fetches —
-            // the per-league/day state flows update the grid's keyed cards in place.
+            val now = System.currentTimeMillis()
+            visibleLeagues.forEach { league ->
+                val state = SportsRepository.dayState(league.id, selectedDay).value
+                val due = state.lastAttemptMs == 0L ||
+                    pollDueThisRound(
+                        tier = pollTierFor(state.games, now),
+                        round = round,
+                        failing = state.error != null,
+                    )
+                if (due) SportsRepository.refresh(league.id, selectedDay)
+            }
+            // The clock is read from the provider, never counted locally, so this interval is how
+            // fresh a live score and clock can be: the per-league/day state flows update the
+            // grid's keyed cards in place.
             delay(SportsRepository.liveRefreshMs)
+            round++
             if (!isToday) {
                 val anyLive = visibleLeagues.any { league ->
                     SportsRepository.dayState(league.id, selectedDay).value.games.any {
@@ -973,6 +990,10 @@ private fun SportsDayList(
         )
     }
 
+    // Grouped by sport, the section heading no longer says which league a row is from, so the row
+    // says it itself. A section per league already says it, and repeating it there is noise.
+    val rowsCarryLeague = !teamMode && leagues.map { it.sport }.distinct().size > 1
+
     val gridState = rememberLazyGridState()
     val gridFocus = rememberSportsGridFocus(gridState)
 
@@ -980,9 +1001,11 @@ private fun SportsDayList(
         modifier = modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
     ) {
-        if (sections.anyError) {
-            SportsStaleNote(sections.oldestFetchMs)
-        }
+        staleNoteText(
+            failures = sections.failedCount,
+            leagues = sections.leagueCount,
+            oldestFailedFetchMs = sections.oldestFailedFetchMs,
+        )?.let { note -> SportsStaleNote(note) }
 
         if (teamMode) heroEvent?.let { hero ->
             SportsHero(
@@ -1074,6 +1097,7 @@ private fun SportsDayList(
                                     SportsScoreRow(
                                         event = game,
                                         league = byId[game.leagueId],
+                                        leagueTag = if (rowsCarryLeague) byId[game.leagueId]?.shortName else null,
                                         hideScores = hideScores,
                                         followedSideIds = SportsFollows.followedSideIds(settings, game),
                                         matchedChannelName = matchedByEvent[game.id],
@@ -1099,7 +1123,7 @@ private fun SportsDayList(
     }
 }
 
-private fun buildGridSections(
+internal fun buildGridSections(
     live: List<SportsEvent>,
     upcoming: List<SportsEvent>,
     results: List<SportsEvent>,
@@ -1110,62 +1134,14 @@ private fun buildGridSections(
     teamSections: List<SportsTeamAhead> = emptyList(),
     liveCaption: String? = null,
 ): List<SportsSectionGridLayout.Companion.SectionInput<SportsEvent>> {
-    // My Sports retains its team-ahead rows, while the selected day itself uses the same
-    // Live / Upcoming / Past categories as All Events.
-    if (teamMode) {
-        return buildList {
-            if (live.isNotEmpty()) add(
-                SportsSectionGridLayout.Companion.SectionInput(
-                    key = "mysports-live",
-                    title = "Live",
-                    items = live,
-                    live = true,
-                    caption = liveCaption ?: "Everything you follow, live now",
-                    itemKey = { "${it.leagueId}:${it.id}" },
-                ),
-            )
-            if (upcoming.isNotEmpty()) add(
-                SportsSectionGridLayout.Companion.SectionInput(
-                    key = "mysports-upcoming",
-                    title = if (dayCategory == SportsDayCategory.FUTURE) "Upcoming Games" else "Upcoming",
-                    items = upcoming,
-                    live = false,
-                    itemKey = { "${it.leagueId}:${it.id}" },
-                ),
-            )
-            if (results.isNotEmpty()) add(
-                SportsSectionGridLayout.Companion.SectionInput(
-                    key = "mysports-past",
-                    title = "Past Games",
-                    items = results,
-                    live = false,
-                    itemKey = { "${it.leagueId}:${it.id}" },
-                ),
-            )
-            (if (dayCategory == SportsDayCategory.TODAY) teamSections else emptyList()).forEach { teamSection ->
-                val league = leagues.firstOrNull { it.id == teamSection.leagueId }
-                val name = teamSection.team?.shortName?.takeIf { it.isNotBlank() }
-                    ?: teamSection.team?.name
-                    ?: teamSection.games.firstNotNullOfOrNull { SportsFollows.followedSideName(settings, it) }
-                    ?: "Followed team"
-                val title = teamSection.note?.takeIf { it.isNotBlank() }?.let { "$name · $it" } ?: name
-                add(
-                    SportsSectionGridLayout.Companion.SectionInput(
-                        key = "team:${teamSection.teamKey}",
-                        title = title,
-                        items = teamSection.games,
-                        live = false,
-                        accentColor = league?.color,
-                        caption = gamesAheadCaption(teamSection.games.size),
-                        itemKey = { "${it.leagueId}:${it.id}" },
-                    ),
-                )
-            }
-        }
-    }
-
     val leagueOrder = leagues.mapIndexed { idx, l -> l.id to idx }.toMap()
     val byId = leagues.associateBy { it.id }
+    val followedSports = settings.followedLeagues.mapNotNull { byId[it]?.sport }.toSet()
+    // The sport chip narrows the page to one sport, where the league itself is the heading worth
+    // having ("NBA · Upcoming", "WNBA · Upcoming"); with several sports on the slate the sport is
+    // the heading, and the cards carry their own league.
+    val oneSport = leagues.map { it.sport }.distinct().size <= 1
+    val upcomingTitle = if (dayCategory == SportsDayCategory.FUTURE) "Upcoming Games" else "Upcoming"
 
     fun groupByLeagueOrdered(
         games: List<SportsEvent>,
@@ -1213,6 +1189,82 @@ private fun buildGridSections(
         }
     }
 
+    /**
+     * One section per sport: the heading a viewer looks for when several sports are in play is
+     * "Basketball", and the cards carry their own league's badge and colour. A sport with something
+     * followed in it leads, the rest keep the catalog's own sport order.
+     */
+    fun groupBySportOrdered(
+        games: List<SportsEvent>,
+        stagePrefix: String,
+        stageSuffix: String,
+    ): List<SportsSectionGridLayout.Companion.SectionInput<SportsEvent>> {
+        if (games.isEmpty()) return emptyList()
+        val sportOrder = Sport.entries.withIndex().associate { (index, sport) -> sport to index }
+        return games.groupBy { byId[it.leagueId]?.sport ?: Sport.OTHER }
+            .entries
+            .sortedWith(
+                compareByDescending<Map.Entry<Sport, List<SportsEvent>>> { (sport, items) ->
+                    sport in followedSports || items.any { SportsFollows.isFollowedTeamGame(settings, it) }
+                }.thenBy { sportOrder[it.key] ?: Int.MAX_VALUE },
+            )
+            .map { (sport, items) ->
+                SportsSectionGridLayout.Companion.SectionInput(
+                    key = "$stagePrefix:sport:${sport.name}",
+                    title = "${sport.label} · $stageSuffix",
+                    items = items,
+                    live = false,
+                    itemKey = { "${it.leagueId}:${it.id}" },
+                )
+            }
+    }
+
+    fun groupOrdered(
+        games: List<SportsEvent>,
+        stagePrefix: String,
+        stageSuffix: String,
+    ): List<SportsSectionGridLayout.Companion.SectionInput<SportsEvent>> =
+        if (oneSport) groupByLeagueOrdered(games, stagePrefix, stageSuffix)
+        else groupBySportOrdered(games, stagePrefix, stageSuffix)
+
+    // My Sports retains its team-ahead rows, while the selected day itself uses the same
+    // Live / Upcoming / Past categories as All Events.
+    if (teamMode) {
+        return buildList {
+            if (live.isNotEmpty()) add(
+                SportsSectionGridLayout.Companion.SectionInput(
+                    key = "mysports-live",
+                    title = "Live",
+                    items = live,
+                    live = true,
+                    caption = liveCaption ?: "Everything you follow, live now",
+                    itemKey = { "${it.leagueId}:${it.id}" },
+                ),
+            )
+            addAll(groupOrdered(upcoming, stagePrefix = "mysports-upcoming", stageSuffix = upcomingTitle))
+            addAll(groupOrdered(results, stagePrefix = "mysports-past", stageSuffix = "Past Games"))
+            (if (dayCategory == SportsDayCategory.TODAY) teamSections else emptyList()).forEach { teamSection ->
+                val league = leagues.firstOrNull { it.id == teamSection.leagueId }
+                val name = teamSection.team?.shortName?.takeIf { it.isNotBlank() }
+                    ?: teamSection.team?.name
+                    ?: teamSection.games.firstNotNullOfOrNull { SportsFollows.followedSideName(settings, it) }
+                    ?: "Followed team"
+                val title = teamSection.note?.takeIf { it.isNotBlank() }?.let { "$name · $it" } ?: name
+                add(
+                    SportsSectionGridLayout.Companion.SectionInput(
+                        key = "team:${teamSection.teamKey}",
+                        title = title,
+                        items = teamSection.games,
+                        live = false,
+                        accentColor = league?.color,
+                        caption = gamesAheadCaption(teamSection.games.size),
+                        itemKey = { "${it.leagueId}:${it.id}" },
+                    ),
+                )
+            }
+        }
+    }
+
     return buildList {
         if (live.isNotEmpty()) {
             add(
@@ -1225,9 +1277,8 @@ private fun buildGridSections(
                 ),
             )
         }
-        val upcomingTitle = if (dayCategory == SportsDayCategory.FUTURE) "Upcoming Games" else "Upcoming"
-        addAll(groupByLeagueOrdered(upcoming, stagePrefix = "upcoming", stageSuffix = upcomingTitle))
-        addAll(groupByLeagueOrdered(results, stagePrefix = "results", stageSuffix = "Past Games"))
+        addAll(groupOrdered(upcoming, stagePrefix = "upcoming", stageSuffix = upcomingTitle))
+        addAll(groupOrdered(results, stagePrefix = "results", stageSuffix = "Past Games"))
     }
 }
 
@@ -1279,12 +1330,35 @@ private fun SportsGridSectionHeader(
     }
 }
 
+/**
+ * What the page says when a refresh failed, or null when there is nothing worth saying.
+ *
+ * A failure only matters when it can cost the viewer something: data on screen that may now be
+ * stale, or a competition they follow. "just now" is never quoted as an age - a failure over data a
+ * second old is not a reason to draw a warning, it is the first round after opening the page.
+ */
+internal fun staleNoteText(
+    failures: Int,
+    leagues: Int,
+    oldestFailedFetchMs: Long,
+    nowMs: Long = System.currentTimeMillis(),
+): String? {
+    if (failures <= 0) return null
+    val age = relativeAge(oldestFailedFetchMs, nowMs)?.takeIf { it != "just now" }
+    return when {
+        failures < leagues ->
+            if (age != null) "Some competitions could not refresh · data from $age"
+            else "Some competitions could not refresh"
+        age != null -> "Could not refresh · showing $age"
+        else -> "Could not refresh"
+    }
+}
+
 @Composable
-private fun SportsStaleNote(fetchedAtMs: Long) {
+private fun SportsStaleNote(text: String) {
     val tokens = MaterialTheme.nuvio
-    val age = remember(fetchedAtMs) { relativeAge(fetchedAtMs) }
     Text(
-        text = if (age == null) "Could not refresh" else "Could not refresh · showing $age",
+        text = text,
         style = MaterialTheme.typography.labelSmall,
         color = tokens.colors.warning,
     )
@@ -1349,8 +1423,13 @@ private data class DaySections(
     val upcoming: List<SportsEvent>,
     val results: List<SportsEvent>,
     val anyLoading: Boolean,
+    /** Any league at all failed — worth saying only when there is nothing to show either. */
     val anyError: Boolean,
-    val oldestFetchMs: Long,
+    /** Leagues in view that are drawn from cache because their refresh failed. */
+    val failedCount: Int = 0,
+    /** Age of the oldest data among [failedCount], 0 when none of them has ever loaded. */
+    val oldestFailedFetchMs: Long = 0L,
+    val leagueCount: Int = 0,
 )
 
 @Composable
@@ -1379,14 +1458,26 @@ private fun collectSections(
                 else -> 0
             }
         }
-    val fetched = states.map { it.fetchedAtMs }.filter { it > 0L }
+    // Only failures that can cost the viewer something: a league whose games are on screen (they
+    // may be stale) or one they follow. A competition with nothing on that day answering with an
+    // error changes nothing at all, and page-wide banners over an up-to-date page are worse than
+    // silence.
+    val failedThatMatter = leagues.indices.filter { index ->
+        states[index].error != null &&
+            (states[index].games.isNotEmpty() || leagues[index].id in settings.followedLeagues)
+    }
     return DaySections(
         live = followedFirst(split.live),
         upcoming = followedFirst(split.upcoming),
         results = followedFirst(split.results),
         anyLoading = states.any { it.loading },
         anyError = states.any { it.error != null },
-        oldestFetchMs = fetched.minOrNull() ?: 0L,
+        failedCount = failedThatMatter.size,
+        oldestFailedFetchMs = failedThatMatter
+            .map { states[it].fetchedAtMs }
+            .filter { it > 0L }
+            .minOrNull() ?: 0L,
+        leagueCount = leagues.size,
     )
 }
 
@@ -1418,6 +1509,53 @@ private const val MAX_LIVE_WINDOW_MS = 8 * 60 * 60_000L
 
 /** The provider may flip a game to "in" a few minutes before its scheduled start. */
 private const val LIVE_EARLY_SLACK_MS = 10 * 60_000L
+
+/** How far either side of its start a game keeps its league on the middle pace. */
+private const val POLL_WINDOW_MS = 6 * 60 * 60_000L
+
+/** One round in this many (a minute at 10 s rounds) for a league whose game is near, not on. */
+private const val NEAR_ROUNDS = 6
+
+/** One round in this many (five minutes) for a league with nothing on the selected day. */
+private const val COLD_ROUNDS = 30
+
+/** Whether [event] is in progress right now — the leagues that are asked every round. */
+internal fun isLiveNow(event: SportsEvent, nowMs: Long): Boolean =
+    resolvedGameState(event, nowMs) == GameState.LIVE
+
+/** Whether [event] is on, starting, or recently enough started that its league is worth asking. */
+internal fun worthPolling(event: SportsEvent, nowMs: Long, windowMs: Long = POLL_WINDOW_MS): Boolean {
+    if (isLiveNow(event, nowMs)) return true
+    return event.startMs - nowMs in -windowMs..windowMs
+}
+
+/** The pace a league's day deserves right now. */
+internal enum class SportsPollTier {
+    /** Something is in progress: the page is showing a clock and a score that must keep up. */
+    LIVE,
+
+    /** Nothing in progress, but a game starts or finishes near enough that the slate can change. */
+    NEAR,
+
+    /** Nothing on that day at all: an empty scoreboard does not change. */
+    COLD,
+}
+
+internal fun pollTierFor(games: List<SportsEvent>, nowMs: Long): SportsPollTier = when {
+    games.any { isLiveNow(it, nowMs) } -> SportsPollTier.LIVE
+    games.any { worthPolling(it, nowMs) } -> SportsPollTier.NEAR
+    else -> SportsPollTier.COLD
+}
+
+/** Whether refresh round [round] (0-based) should ask for a league on [tier]. */
+internal fun pollDueThisRound(tier: SportsPollTier, round: Int, failing: Boolean = false): Boolean = when {
+    // A league whose last answer was a failure is backed off to the middle pace whatever it holds:
+    // asking again every round only makes a rate limit or an outage last longer.
+    failing -> round % NEAR_ROUNDS == 0
+    tier == SportsPollTier.LIVE -> true
+    tier == SportsPollTier.NEAR -> round % NEAR_ROUNDS == 0
+    else -> round % COLD_ROUNDS == 0
+}
 
 /**
  * The state a game can claim as of [nowMs], sanity-checked against the clock.

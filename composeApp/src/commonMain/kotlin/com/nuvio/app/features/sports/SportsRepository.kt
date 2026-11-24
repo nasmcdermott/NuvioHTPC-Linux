@@ -14,7 +14,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * The Sports tab's data, cached first and refreshed behind.
@@ -27,20 +29,34 @@ internal object SportsRepository {
     private val log = Logger.withTag("Sports")
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
 
-    /** How long a fetched day is trusted before a refresh is worth making. */
     /**
-     * How often the Sports page re-asks for the day it is showing. The scoreboard carries a running
-     * clock, period and score, so a page that fetches once shows a frozen game; this is the interval
-     * the page's timer uses, and the repository's own cache TTL for a live day, so the timer's ask is
-     * never served from the cache it just filled.
+     * How often the Sports page re-asks for the day it is showing, while something is live. The
+     * scoreboard carries a running clock, period and score, so a page that fetches once shows a
+     * frozen game; this is the interval the page's timer uses, and the repository's own cache TTL
+     * for a live day, so the timer's ask is never served from the cache it just filled.
      */
     internal val liveRefreshMs: Long get() = Freshness.LIVE_MS
 
+    /**
+     * How often the game page re-reads its summary (box score, plays, stats) while the game is on.
+     * That answer is the expensive one — a summary is a hundred times the size of a scoreboard — and
+     * the numbers on it change at the pace of a stat keeper, not of the clock, so it is read less
+     * often than the scoreboard is.
+     */
+    internal val liveDetailRefreshMs: Long get() = Freshness.LIVE_DETAIL_MS
+
     internal object Freshness {
-        // The feed's clock is not a ticker: ESPN rewrites displayClock only when the game clock
-        // actually stops (a score, a timeout, a dead ball), which is roughly once a minute. Asking
-        // more often than this buys nothing, and asking less often makes a live game look frozen.
-        const val LIVE_MS = 30_000L
+        // A game in progress is re-read every 10 s. ESPN rewrites the scoreboard as each play lands
+        // and the page is showing a clock and a scoreline the viewer is watching, so half a minute
+        // made a live game look late on every basket. Only leagues with a game on are asked this
+        // often (see the page's refresh loop); the per-game status address behind a card's own
+        // clock is polled faster still — every 5 s, in SportsLiveStatus.
+        const val LIVE_MS = 10_000L
+        // Today, with nothing in progress: kick-offs and final whistles are the only things that
+        // change, so a minute is enough and the whole catalog can be asked at that pace.
+        const val TODAY_MS = 60_000L
+        // The summary behind an open game page: stats and plays, at a stat keeper's pace.
+        const val LIVE_DETAIL_MS = 30_000L
         const val FUTURE_MS = 30 * 60_000L
         const val PAST_MS = 24 * 60 * 60_000L
         const val TEAMS_MS = 7 * 24 * 60 * 60_000L
@@ -55,6 +71,12 @@ internal object SportsRepository {
         /** Set when the last refresh failed; [games] may still hold the cached (older) day. */
         val error: String? = null,
         val fetchedAtMs: Long = 0L,
+        /**
+         * When the feed was last *asked*, successfully or not. Kept apart from [fetchedAtMs] so a
+         * league that keeps failing is not asked again on every refresh round (see the page's
+         * loop): without it, a failing league looks permanently "never fetched" and is hammered.
+         */
+        val lastAttemptMs: Long = 0L,
     ) {
         val isEmpty: Boolean get() = games.isEmpty()
     }
@@ -71,6 +93,14 @@ internal object SportsRepository {
     val version: StateFlow<Int> = _version.asStateFlow()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * How many scoreboards may be in flight at once. Opening the page asks for every league in the
+     * region — 50-odd competitions — and a burst that wide makes ESPN answer some of them with a
+     * rate limit or a 5xx, which the page then reports as "could not refresh". They queue instead,
+     * a few at a time: the day fills in progressively and no request is refused.
+     */
+    private val feedSlots = Semaphore(4)
 
     private val dayFormatter = DateTimeFormatter.ofPattern("yyyyMMdd")
 
@@ -114,9 +144,9 @@ internal object SportsRepository {
                 val now = System.currentTimeMillis()
                 if (!force && !daySnapshotStale(day, state.value.games, state.value.fetchedAtMs, now)) return@launch
 
-                state.update { it.copy(loading = true, error = null) }
+                state.update { it.copy(loading = true, error = null, lastAttemptMs = now) }
                 try {
-                    val games = SportsFeeds.current.scoreboard(league, day, day)
+                    val games = feedSlots.withPermit { SportsFeeds.current.scoreboard(league, day, day) }
                     state.value = DayState(
                         leagueId = leagueId,
                         day = day,
@@ -124,6 +154,7 @@ internal object SportsRepository {
                         loading = false,
                         error = null,
                         fetchedAtMs = now,
+                        lastAttemptMs = now,
                     )
                     SportsCache.writeGames(leagueId, day, day, games, now)
                     _version.update { it + 1 }
@@ -132,7 +163,13 @@ internal object SportsRepository {
                     throw e
                 } catch (e: Throwable) {
                     // Keep whatever is on screen; the error is shown beside it, not instead of it.
-                    state.update { it.copy(loading = false, error = e.message ?: "Could not load games") }
+                    state.update {
+                        it.copy(
+                            loading = false,
+                            error = e.message ?: "Could not load games",
+                            lastAttemptMs = System.currentTimeMillis(),
+                        )
+                    }
                     log.w { "Sports refresh failed for ${league.id} $day: ${e.message}" }
                 }
             } finally {
@@ -330,7 +367,10 @@ internal object SportsRepository {
             // a running clock and a live score. A five-minute cache over it (which is what this
             // once was) served the same frozen numbers for the whole first five minutes of every
             // visit, so the page looked dead even once it started asking again on a timer.
-            else -> Freshness.LIVE_MS
+            // Nothing on yet (or everything finished): a minute, which is how fast a kick-off or a
+            // final whistle needs to be noticed.
+            games.any { it.state == GameState.LIVE } -> Freshness.LIVE_MS
+            else -> Freshness.TODAY_MS
         }
         if (nowMs - fetchedAtMs >= ttl) return true
         return day < today && games.any { it.state != GameState.POST }

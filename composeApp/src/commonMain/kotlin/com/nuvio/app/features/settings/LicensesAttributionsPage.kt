@@ -85,6 +85,8 @@ private const val FanartTvUrl = "https://fanart.tv"
 private const val IgdbUrl = "https://www.igdb.com"
 private const val AniListUrl = "https://anilist.co"
 private const val AniSkipUrl = "https://aniskip.com"
+private const val EspnUrl = "https://www.espn.com"
+private const val TheSportsDbUrl = "https://www.thesportsdb.com"
 
 private data class AttributionItem(
     val searchKey: String,
@@ -632,6 +634,22 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         logo = null,
         logoText = "Skip",
         link = AniSkipUrl,
+    ),
+    AttributionItem(
+        searchKey = "espn-attribution",
+        titleRes = Res.string.settings_licenses_attributions_espn_title,
+        bodyRes = Res.string.settings_licenses_attributions_espn_body,
+        logo = null,
+        logoText = "ESPN",
+        link = EspnUrl,
+    ),
+    AttributionItem(
+        searchKey = "thesportsdb-attribution",
+        titleRes = Res.string.settings_licenses_attributions_thesportsdb_title,
+        bodyRes = Res.string.settings_licenses_attributions_thesportsdb_body,
+        logo = null,
+        logoText = "TSDB",
+        link = TheSportsDbUrl,
     ),
 )
 

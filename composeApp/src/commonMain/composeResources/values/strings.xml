@@ -967,6 +967,10 @@
     <string name="settings_licenses_attributions_games_body">Game Mode details and cover art come from IGDB (through your own Twitch application), with logos and backdrops from Steam and SteamGridDB. Nuvio HTPC is not affiliated with or endorsed by these services.</string>
     <string name="settings_licenses_attributions_anilist_title">AniList</string>
     <string name="settings_licenses_attributions_anilist_body">Anime artwork lookups use the AniList API. Nuvio HTPC is not affiliated with or endorsed by AniList.</string>
+    <string name="settings_licenses_attributions_espn_title">ESPN</string>
+    <string name="settings_licenses_attributions_espn_body">The Sports page and the live score pop-ups read scores, schedules, teams and player details from ESPN&apos;s public site feeds, which need no key and are unofficial. Nuvio HTPC is not affiliated with or endorsed by ESPN.</string>
+    <string name="settings_licenses_attributions_thesportsdb_title">TheSportsDB</string>
+    <string name="settings_licenses_attributions_thesportsdb_body">Live TV&apos;s sport badges and match-day pictures, team colours, and the boxing cards in live scores, come from TheSportsDB&apos;s free API. Nuvio HTPC is not affiliated with or endorsed by TheSportsDB.</string>
     <string name="settings_licenses_attributions_aniskip_title">AniSkip &amp; Anime-Skip</string>
     <string name="settings_licenses_attributions_aniskip_body">Anime intro and outro times come from AniSkip and Anime-Skip. Nuvio HTPC is not affiliated with or endorsed by these projects.</string>
     <string name="settings_licenses_attributions_eclipse_title">Eclipse Music &amp; Nebula</string>
