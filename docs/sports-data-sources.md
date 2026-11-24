@@ -74,6 +74,91 @@ football.
 Until one of 2–4 is chosen deliberately, the Sports page stays ESPN-only and says so in the
 attribution list.
 
+## A one-second page: what the providers actually publish
+
+Measured on 24 Nov 2026 from a Linux workstation, one 60–90 s sample per address at one request a
+second, recording when the payload changed and the CDN's own freshness headers:
+
+| Address | `cache-control` it answers with | What was observed |
+| --- | --- | --- |
+| `site.api.espn.com/…/scoreboard` (what the page polls) | `max-age=9` | the clock string moved about every 10 s; a score change showed up once in a 50 s window |
+| `site.api.espn.com/…/summary?event=` (the game page) | `max-age=9` | same generation of the data |
+| `site.web.api.espn.com/apis/v2/scoreboard/header?sport=…&league=…` | `max-age=2` … `max-age=7`, varies per answer | **the fastest ESPN surface found**: scores, `fullStatus.clock`, period and `situation.lastPlay` for a whole league in one request; a new play id appeared within ~3 s (NHL), ~10 s (NBA); the clock string is still 10 s granular. One call covers every league of a sport for soccer |
+| `sports.core.api.espn.com/…/competitions/{id}/status` | `max-age=10` | 3 changes in 90 s: the per-game status is as coarse as the scoreboard |
+| `sports.core.api.espn.com/…/competitions/{id}/plays?limit=10` | `max-age=4` | changes with each play; the finest-grained ESPN address |
+| `api-web.nhle.com/v1/score/{date}`, `/gamecenter/{id}/play-by-play`, `/right-rail` | `max-age=19, s-maxage=19` | new plays at +15.7 s and +35.7 s; **NHL's own floor is 19 s** |
+| `statsapi.mlb.com/api/v1.1/game/{pk}/feed/live` and `…/diffPatch` | `max-age=10` | the payload carries `metaData.wait: 10` — the server telling clients to come back in 10 s; `diffPatch` answers with `gameEvents`/`logicalEvents` and a `timeStamp` to pass back |
+| `cdn.nba.com/static/json/liveData/…` | — | HTTP 403 from this host (needs a home connection or an app-shaped request to test) |
+| `api.sofascore.com/api/v1/…` | — | HTTP 403 (Varnish); unofficial and against their terms — not a route to take |
+
+Three conclusions follow, and they decide the design:
+
+1. **No free source publishes a per-second clock.** The providers say so themselves: ESPN's CDN holds
+   an answer for 2–10 s, the NHL sets `s-maxage=19`, and MLB hands out a `wait` of 10. Asking faster
+   than the `max-age` returns the same bytes.
+2. **A one-second display therefore has to be rendered locally** between authoritative reads. That is
+   what Apple Sports does: the scores arrive as pushes (Live Activities are updated over APNs) and the
+   clock ticks on the device, so the display is per-second without a request per second. It is also
+   what the page can do without any new provider.
+3. **The authoritative read can still get a little faster than today** — not below the provider's
+   floor, but from 10 s to the 2–7 s the header widget allows, for the handful of leagues that
+   actually have a game in progress.
+
+### What the clock needs to tick locally, and where it breaks
+
+ESPN gives `fullStatus.clock` (a number), `period`, and `status.type` (`state`: `pre`/`in`/`post`,
+plus `detail` such as `Halftime` or `End of 3rd`). The number is not the same thing in every sport,
+which was checked rather than assumed:
+
+- **Basketball, hockey, football (US)** — seconds *remaining* in the period ("3:53 - 4th Quarter"
+  reads `clock: 233`).
+- **Soccer** — seconds *elapsed* in the match: a finished Premier League game reads `clock: 5400`
+  with `displayClock: "90'+5'"` and `period: 2`. Stoppage time is in the display string only.
+
+The rules an interpolator has to obey, or it will lie:
+
+- **Tick between reads, resync on every read.** A poll that returns a different clock replaces the
+  estimate; nothing drifts longer than one poll interval.
+- **Hold when the clock is stopped.** If two consecutive reads ten seconds apart report the same
+  clock, the clock is not running (a timeout, a stoppage, a review) — the ticker stops instead of
+  counting down through it.
+- **Never run past the period.** Period length is per sport (12 min quarters, 20 min periods, 45 min
+  halves), so the ticker stops at zero and waits for the next read to say what happened; it never
+  rolls into a period that has not started.
+- **Never show a second the provider has not reached.** The estimate is capped at the last read's
+  clock, so the page is never *ahead* of the source — the failure mode is a clock that stops for a
+  moment, not one that invents time.
+
+That is the honest shape of "as live as Apple Sports" on ESPN's data: the display moves every second,
+while the score itself cannot be newer than ESPN's own 2–10 s publication.
+
+### Going below the provider's floor, if it is ever worth paying for
+
+Only a push feed does that — a socket the provider writes to when something happens, rather than an
+address we ask. Everything in this table is a commercial product whose documentation is marketing
+copy; the numbers are what to ask each one for, not verified facts:
+
+| Route | Transport to ask about | The question that decides it |
+| --- | --- | --- |
+| **Sportradar** (official NBA/NHL/MLB/data partner) | push/streaming feeds beside the pull API | in-play latency SLA per sport, and whether the trial covers the leagues in the catalog |
+| **SportsDataIO** (now DCSG) | their real-time push feeds | same, plus price for the 55 competitions here |
+| **Sportmonks** | webhooks over in-play | their published in-play interval (seconds per update) per league |
+| **Enetpulse / LSports** | real-time/highlight feeds used by bookmakers | cost, and whether a single developer can license it at all |
+| **Genius Sports / Stats Perform** | enterprise distribution | almost certainly out of scope for a desktop app |
+
+What those buy is the *score* arriving in about a second. Nothing in this repository pays for that
+today, and the free route above already makes the page look live.
+
+### If this is built, this is where it goes
+
+- `SportsLiveStatus.kt` already re-reads a card's own status every 5 s (`POLL_MS`); the header widget
+  is the cheaper address (one request per live league, all of its games) and is allowed at 2–7 s.
+- The interpolator belongs beside it as a pure function — `clockAt(lastRead, nowMs, sport, period)`
+  — so the hold/stop/cap rules above are unit-testable without a window, the way
+  `pollDueThisRound`/`sportsBandChipAt` already are.
+- The page's wording stays as it is: nothing here changes what "data from N minutes ago" means, and a
+  live card must not claim a fresher score than the last read it actually got.
+
 ## Adding a league
 
 1. Check the path answers: `curl -s -o /dev/null -w '%{http_code}' "https://site.api.espn.com/apis/site/v2/sports/<path>/scoreboard?limit=2"` must be `200`, and the response's `leagues[0].logos[0].href` is the logo to use (every league needs one — `SportsCatalogTest` enforces it).
@@ -88,8 +173,9 @@ attribution list.
 The page asks ESPN for the selected day's scoreboard, per league, at one of three paces:
 
 - **live** (a game is in progress): every 10 s — `Freshness.LIVE_MS`, the interval the page's refresh
-  round runs at. The clock and score are read from the provider, never counted locally, so this is
-  how fresh a live game can look.
+  round runs at. The score and the clock are read from the provider and never counted locally, so 10 s
+  is how fresh a live game can look today; the section below measures what the providers actually
+  publish, and what a one-second clock would cost.
 - **near** (nothing in progress, but a game starts or finished within six hours): once a minute —
   `NEAR_ROUNDS`.
 - **nothing on that day**: every five minutes — `COLD_ROUNDS`; an empty scoreboard does not change.
