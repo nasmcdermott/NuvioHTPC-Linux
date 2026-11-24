@@ -2,6 +2,7 @@ package com.nuvio.app.features.music
 
 import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
+import com.nuvio.app.features.music.library.musicFocusZoom
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.window.PopupProperties
@@ -893,6 +894,7 @@ private fun LibraryViewSwitch(icon: androidx.compose.ui.graphics.vector.ImageVec
     Row(
         Modifier
             .height(44.dp)
+            .musicFocusZoom(1.06f)
             .clip(shape)
             .background(if (on) colors.accent.copy(alpha = 0.20f) else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.04f))
             .border(1.dp, if (on) colors.accent.copy(alpha = 0.55f) else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.10f), shape)

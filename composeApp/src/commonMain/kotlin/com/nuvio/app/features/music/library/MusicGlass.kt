@@ -2,6 +2,9 @@ package com.nuvio.app.features.music.library
 
 import com.nuvio.app.core.ui.trackSidebarEntryFocusY
 import com.nuvio.app.core.ui.smoothBorder
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,12 +19,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.MaterialTheme
 import com.nuvio.app.core.ui.NuvioGlass
 import com.nuvio.app.core.ui.KeyboardInputMode
 import com.nuvio.app.core.ui.ditheredBackground
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.settings.ThemeSettingsRepository
+import com.nuvio.app.features.settings.focusZoomScale
 
 /*
  * fork:music
@@ -60,6 +67,27 @@ internal fun Modifier.musicGlass(
             brush = if (ringed) SolidColor(tokens.colors.borderFocus) else NuvioGlass.Edge,
             shape = shape,
         )
+}
+
+/**
+ * The desktop focus zoom for a music control that has no scale of its own. Follows the Settings zoom, so 0% leaves
+ * the control still, and grows to [scale] at the old fixed 4%. Goes before the control's clickable.
+ */
+@Composable
+internal fun Modifier.musicFocusZoom(scale: Float = 1.06f): Modifier {
+    var focused by remember { mutableStateOf(false) }
+    val zoomPercent by ThemeSettingsRepository.desktopFocusZoomPercent.collectAsStateWithLifecycle()
+    val current by animateFloatAsState(
+        targetValue = if (focused) focusZoomScale(scale, zoomPercent) else 1f,
+        animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
+        label = "musicFocusZoom",
+    )
+    return this
+        .onFocusChanged { focused = it.hasFocus }
+        .graphicsLayer {
+            scaleX = current
+            scaleY = current
+        }
 }
 
 /**

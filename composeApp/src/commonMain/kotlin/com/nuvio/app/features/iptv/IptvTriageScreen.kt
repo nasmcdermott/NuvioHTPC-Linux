@@ -514,6 +514,7 @@ private fun TriageTileView(tile: TriageTile, focused: Boolean, onClick: () -> Un
             .clip(shape)
             .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .iptvFocusBounce(focused || hovered, 1.015f)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -553,7 +554,8 @@ private fun TriageButtonView(label: String, enabled: Boolean, accent: Boolean, f
             // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
             .clip(shape)
             .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
-            .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick),
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
+            .iptvFocusBounce(focused || (hovered && enabled), 1.03f),
         contentAlignment = Alignment.Center,
     ) {
         Text(

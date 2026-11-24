@@ -174,6 +174,7 @@ private fun GuideRow(
                 .clip(NuvioGlass.Shape)
                 .then(if (keyboardFocused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, RoundedCornerShape(10.dp)) else Modifier)
                 .clickable(onClick = onPlay)
+                .iptvFocusBounce(keyboardFocused, 1.015f, growFromStart = true)
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -271,6 +272,7 @@ private fun GuideCell(
             .clip(shape)
             .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .iptvFocusBounce(focused || hovered, 1.01f)
             .padding(horizontal = 10.dp, vertical = 8.dp)
             // A programme that began left of the visible area keeps its title in view: the text
             // slides right with the scroll, up to the cell's end. Read in the layout phase, so

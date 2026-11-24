@@ -401,7 +401,8 @@ private fun IptvWallTile(playlist: IptvPlaylist, item: IptvWallItem, now: Long, 
             // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
             .clip(shape)
             .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
-            .clickable(interactionSource = interaction, indication = null, enabled = !dead, onClick = onClick),
+            .clickable(interactionSource = interaction, indication = null, enabled = !dead, onClick = onClick)
+            .iptvFocusBounce(focused || (hovered && !dead), 1.02f),
     ) {
         when (item) {
             is IptvWallItem.Match -> MatchTile(item, now)
@@ -746,6 +747,7 @@ private fun DetailActionRow(icon: ImageVector, label: String, note: String?, acc
             .clip(shape)
             .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .iptvFocusBounce(focused || hovered, 1.02f)
             .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),

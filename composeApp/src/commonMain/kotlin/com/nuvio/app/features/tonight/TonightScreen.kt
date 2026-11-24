@@ -4,6 +4,9 @@ import com.nuvio.app.core.ui.trackSidebarEntryFocusY
 import com.nuvio.app.core.ui.keyLayer
 import com.nuvio.app.core.ui.RootNavFocus
 import com.nuvio.app.core.ui.requestFocusLogged
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -73,6 +76,8 @@ import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.smoothBorder
 import com.nuvio.app.core.ui.smoothRoundClip
 import com.nuvio.app.features.library.LibraryRepository
+import com.nuvio.app.features.settings.ThemeSettingsRepository
+import com.nuvio.app.features.settings.focusZoomScale
 import kotlinx.coroutines.delay
 import java.time.LocalDateTime
 import java.time.format.TextStyle
@@ -93,6 +98,21 @@ internal val GlassEdge = Color.White.copy(alpha = 0.14f)
 internal val TextDim = Color(0xFFB9B6AD)
 internal val TextFaint = Color(0xFF8F8C84)
 internal val Side = 56.dp
+
+/** The desktop focus zoom for a launcher tile or chip; follows the Settings slider, so 0% leaves it still. */
+@Composable
+private fun Modifier.tonightFocusZoom(active: Boolean, scale: Float): Modifier {
+    val zoomPercent by ThemeSettingsRepository.desktopFocusZoomPercent.collectAsStateWithLifecycle()
+    val current by animateFloatAsState(
+        targetValue = if (active) focusZoomScale(scale, zoomPercent) else 1f,
+        animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
+        label = "tonightFocusZoom",
+    )
+    return graphicsLayer {
+        scaleX = current
+        scaleY = current
+    }
+}
 
 /**
  * The strip the always-on top navigation bar occupies. Views draw their ambient wash full-height and
@@ -758,6 +778,7 @@ private fun TonightLauncher(
                 accent = accent,
                 onClick = onBrowseAll,
                 pill = true,
+                zoom = true,
             )
         }
         Spacer(Modifier.weight(1f))
@@ -773,6 +794,7 @@ private fun BedtimeChip(settings: TonightSettings, active: Boolean, selected: Bo
         modifier = Modifier
             .height(44.dp)
             .width(260.dp)
+            .tonightFocusZoom(selected, 1.03f)
             .clip(shape)
             .background(if (selected) accent.copy(alpha = 0.16f) else GlassFill)
             .smoothBorder(if (selected) 2.dp else 1.dp, if (selected) accent else GlassEdge, shape)
@@ -814,7 +836,7 @@ private fun ModeTile(
     val hovered by hover.collectIsHoveredAsState()
     LaunchedEffect(hovered) { if (hovered) onHover() }
     // The chosen tile is drawn above its neighbours so its glow lies over the gaps, not under the next tile.
-    Box(modifier = modifier.zIndex(if (selected) 1f else 0f)) {
+    Box(modifier = modifier.zIndex(if (selected) 1f else 0f).tonightFocusZoom(selected, 1.025f)) {
     AmbientGlow(lit = selected, colour = glow, cornerRadius = 18.dp)
     Box(
         modifier = Modifier
@@ -882,11 +904,21 @@ private fun ModeTile(
 }
 
 @Composable
-internal fun GlassPill(text: String, selected: Boolean, accent: Color, onClick: () -> Unit, enabled: Boolean = true, pill: Boolean = false) {
+internal fun GlassPill(
+    text: String,
+    selected: Boolean,
+    accent: Color,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    pill: Boolean = false,
+    /** Scale the pill while [selected], for screens where selection is the keyboard focus. */
+    zoom: Boolean = false,
+) {
     val shape = RoundedCornerShape(if (pill) 999.dp else 14.dp)
     Box(
         modifier = Modifier
             .height(if (pill) 54.dp else 48.dp)
+            .then(if (zoom) Modifier.tonightFocusZoom(selected, 1.04f) else Modifier)
             .clip(shape)
             .background(if (selected) accent.copy(alpha = 0.16f) else GlassFill)
             .smoothBorder(if (selected) 2.dp else 1.dp, if (selected) accent else GlassEdge, shape)

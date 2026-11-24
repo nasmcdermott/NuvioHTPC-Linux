@@ -6,9 +6,14 @@ import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.smoothBorder
 import com.nuvio.app.core.ui.NuvioGlass
 import com.nuvio.app.core.ui.ditheredBackground
+import com.nuvio.app.features.settings.ThemeSettingsRepository
+import com.nuvio.app.features.settings.focusZoomScale
 import com.nuvio.app.features.settings.settingsSkyBackground
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -91,6 +96,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -1267,6 +1274,7 @@ private fun IptvSidebarEntry(
             )
             .then(if (keyboardFocused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .iptvFocusBounce(keyboardFocused || hovered, IptvSidebarFocusScale, growFromStart = true)
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1341,7 +1349,8 @@ private fun IptvHeader(
                             .width(280.dp)
                             .onFocusChanged { onSearchFocusChanged(it.hasFocus) }
                             .onGloballyPositioned { onSearchBounds(it.boundsInWindow()) }
-                            .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, RoundedCornerShape(12.dp)) else Modifier),
+                            .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, RoundedCornerShape(12.dp)) else Modifier)
+                            .iptvFocusBounce(focused, 1.02f),
                         placeholder = filterLabel,
                         focusRequester = searchFocus,
                         leadingContent = {
@@ -1439,6 +1448,7 @@ internal fun IptvHeaderButton(
             )
             .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, CircleShape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .iptvFocusBounce(focused || hovered, IptvHeaderFocusScale)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
@@ -1522,6 +1532,7 @@ private fun IptvRegionChip(
             .clip(shape)
             .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .iptvFocusBounce(focused || hovered, IptvRegionFocusScale)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1620,6 +1631,7 @@ private fun IptvChannelRow(
             .clip(shape)
             .then(if (keyboardFocused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onPlay)
+            .iptvFocusBounce(keyboardFocused || hovered, IptvChannelFocusScale)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1786,6 +1798,38 @@ internal fun Modifier.iptvGlass(
         shape,
     )
     .border(1.dp, NuvioGlass.Edge, shape)
+
+private const val IptvHeaderFocusScale = 1.06f
+private const val IptvSidebarFocusScale = 1.03f
+private const val IptvRegionFocusScale = 1.04f
+private const val IptvChannelFocusScale = 1.015f
+
+/**
+ * The Live TV page's focus lift: a short spring, like the wizard's rows and Settings' quick actions.
+ * The rows run their own selection rather than Compose focus, so the border alone used to be the
+ * only marker; this makes the keys land with the same bounce as the rest of the app.
+ */
+@Composable
+internal fun Modifier.iptvFocusBounce(
+    active: Boolean,
+    scale: Float,
+    growFromStart: Boolean = false,
+): Modifier {
+    val zoomPercent by ThemeSettingsRepository.desktopFocusZoomPercent.collectAsStateWithLifecycle()
+    val current by animateFloatAsState(
+        targetValue = if (active) focusZoomScale(scale, zoomPercent) else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "iptv_focus_bounce",
+    )
+    return graphicsLayer {
+        scaleX = current
+        scaleY = current
+        transformOrigin = if (growFromStart) TransformOrigin(0f, 0.5f) else TransformOrigin.Center
+    }
+}
 
 /**
  * fork:live-tv-polish - a menu or picker over a stage: a solid dark card (not see-through glass, so nothing behind it
