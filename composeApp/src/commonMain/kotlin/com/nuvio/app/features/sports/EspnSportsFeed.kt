@@ -38,6 +38,8 @@ private val ESPN_HEADERS = mapOf(
  * Five addresses cover scores, schedules, teams, a game's detail and a league table:
  *
  *  - `site.api.espn.com/apis/site/v2/sports/{path}/scoreboard?dates=Ymd-Ymd&limit=1000`
+ *  - `site.web.api.espn.com/apis/v2/scoreboard/header?sport={group}&league={league}` — the fast one,
+ *    the same row the provider's own site polls; see [liveScores]
  *  - `site.api.espn.com/apis/site/v2/sports/{path}/teams?limit=1000`
  *  - `site.api.espn.com/apis/site/v2/sports/{path}/summary?event={id}`
  *  - `site.api.espn.com/apis/v2/sports/{path}/standings?level=3`
@@ -60,6 +62,84 @@ internal class EspnSportsFeed(
 
     override suspend fun scoreboardNow(league: League): List<SportsEvent> =
         scoreboardAt("${ESPN}${league.path}/scoreboard?limit=1000", league)
+
+    /**
+     * The provider's fast score row (see [SportsFeed.liveScores]): `scoreboard/header`, whose answer
+     * is allowed to be 2-7 s old where the scoreboard's is 9. One request covers a whole league.
+     *
+     * Its payload is shaped differently from the scoreboard's - the competitors and the status sit on
+     * the event itself, not under `competitions[0]` - so it is parsed here rather than through
+     * [event]. It returns null when the address is not one the row serves (some leagues answer 400
+     * there) so a caller keeps the scoreboard's data instead of losing it.
+     */
+    override suspend fun liveScores(league: League): List<SportsEvent>? {
+        // A league the row does not serve answers 400, and a payload that does not parse is equally
+        // uninteresting here: the scoreboard's data stands and the page's own round reports a real
+        // failure. Nothing about a missing fast row is worth showing the viewer.
+        val root = try {
+            fetchObject(liveScoresUrl(league))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            log.i { "Fast score row unavailable for ${league.id}: ${e.message}" }
+            null
+        } ?: return null
+        val events = root["sports"]?.asArray()
+            ?.flatMap { sport -> sport.jsonObjectOrNull()?.get("leagues")?.asArray().orEmpty() }
+            ?.flatMap { entry -> entry.jsonObjectOrNull()?.get("events")?.asArray().orEmpty() }
+            ?: return null
+        return events.mapNotNull { element ->
+            runCatching { liveEvent(element.jsonObject, league) }.getOrNull()
+        }
+    }
+
+    /** The event as the fast row describes it: everything a card's live part needs, nothing more. */
+    private fun liveEvent(obj: JsonObject, league: League): SportsEvent? {
+        val id = obj["id"]?.stringOrNull()?.takeIf { it.isNotBlank() } ?: return null
+        val status = obj["fullStatus"]?.jsonObjectOrNull() ?: obj["status"]?.jsonObjectOrNull()
+        val typeObj = status?.get("type")?.jsonObjectOrNull()
+        val stateName = typeObj?.get("state")?.stringOrNull()
+        val completed = typeObj?.get("completed")?.jsonPrimitive?.booleanOrNull == true
+        val sides = obj["competitors"]?.asArray().orEmpty().mapNotNull { element ->
+            val side = element.jsonObjectOrNull() ?: return@mapNotNull null
+            val team = Team(
+                id = side["id"]?.stringOrNull().orEmpty(),
+                name = side["displayName"]?.stringOrNull() ?: side["name"]?.stringOrNull().orEmpty(),
+                shortName = side["displayName"]?.stringOrNull() ?: side["name"]?.stringOrNull().orEmpty(),
+                abbreviation = side["abbreviation"]?.stringOrNull().orEmpty(),
+                logo = side["logo"]?.stringOrNull(),
+                color = side["color"]?.stringOrNull()?.let { parseHexColor(it) },
+            )
+            (side["homeAway"]?.stringOrNull() ?: "") to GameSide(
+                team = team,
+                score = side["score"]?.stringOrNull()?.takeIf { it.isNotBlank() },
+                winner = side["winner"]?.jsonPrimitive?.booleanOrNull == true,
+            )
+        }
+        val away = sides.firstOrNull { it.first == "away" }?.second ?: sides.getOrNull(0)?.second ?: return null
+        val home = sides.firstOrNull { it.first == "home" }?.second ?: sides.getOrNull(1)?.second ?: return null
+        val state = when {
+            completed || stateName.equals("post", ignoreCase = true) -> GameState.POST
+            stateName.equals("in", ignoreCase = true) || obj["status"]?.stringOrNull() == "in" -> GameState.LIVE
+            else -> GameState.PRE
+        }
+        return SportsEvent(
+            id = id,
+            leagueId = league.id,
+            startMs = parseEpoch(obj["date"]?.stringOrNull()),
+            state = state,
+            status = typeObj?.get("shortDetail")?.stringOrNull() ?: typeObj?.get("detail")?.stringOrNull(),
+            // A finished game carries "12:00"/"0:00" for a clock that is not running: saying it has
+            // one would draw a clock on a game that is over.
+            clock = if (state == GameState.POST) null else status?.get("displayClock")?.stringOrNull()
+                ?.takeIf { it.isNotBlank() && it != "0:00" },
+            away = away,
+            home = home,
+            situation = obj["situation"]?.jsonObjectOrNull()
+                ?.get("lastPlay")?.jsonObjectOrNull()?.get("text")?.stringOrNull(),
+            progress = progressOf(status),
+        )
+    }
 
     private suspend fun scoreboardAt(url: String, league: League): List<SportsEvent> {
         val root = fetchObject(url) ?: return emptyList()
@@ -168,6 +248,11 @@ internal class EspnSportsFeed(
         }
         return allRows
     }
+
+    /** The fast row's address: the path's two halves become the row's `sport` and `league`. */
+    internal fun liveScoresUrl(league: League): String =
+        "https://site.web.api.espn.com/apis/v2/scoreboard/header" +
+            "?sport=${league.path.substringBefore('/')}&league=${league.path.substringAfter('/')}"
 
     internal fun standingsUrl(league: League): String {
         val divisions = league.path in DIVISION_LEAGUES

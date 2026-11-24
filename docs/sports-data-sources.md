@@ -114,6 +114,8 @@ which was checked rather than assumed:
   reads `clock: 233`).
 - **Soccer** — seconds *elapsed* in the match: a finished Premier League game reads `clock: 5400`
   with `displayClock: "90'+5'"` and `period: 2`. Stoppage time is in the display string only.
+- **Rugby** — also elapsed match time: a finished NRL game reads `displayClock: "80'"`. Like
+  soccer, it is never advanced locally.
 
 The rules an interpolator has to obey, or it will lie:
 
@@ -125,9 +127,10 @@ The rules an interpolator has to obey, or it will lie:
 - **Never run past the period.** Period length is per sport (12 min quarters, 20 min periods, 45 min
   halves), so the ticker stops at zero and waits for the next read to say what happened; it never
   rolls into a period that has not started.
-- **Never show a second the provider has not reached.** The estimate is capped at the last read's
-  clock, so the page is never *ahead* of the source — the failure mode is a clock that stops for a
-  moment, not one that invents time.
+- **Never invent time the reads do not support.** A reading is ticked for at most
+  `CLOCK_TICK_MAX_AGE_MS` (20 s); after that the provider's own string stands until a newer read
+  arrives. Between reads the estimate can trail the provider by the age of the answer that carried
+  it, and it resyncs on the next read instead of drifting.
 
 That is the honest shape of "as live as Apple Sports" on ESPN's data: the display moves every second,
 while the score itself cannot be newer than ESPN's own 2–10 s publication.
@@ -149,13 +152,27 @@ copy; the numbers are what to ask each one for, not verified facts:
 What those buy is the *score* arriving in about a second. Nothing in this repository pays for that
 today, and the free route above already makes the page look live.
 
-### If this is built, this is where it goes
+### How it is built here
 
-- `SportsLiveStatus.kt` already re-reads a card's own status every 5 s (`POLL_MS`); the header widget
-  is the cheaper address (one request per live league, all of its games) and is allowed at 2–7 s.
-- The interpolator belongs beside it as a pure function — `clockAt(lastRead, nowMs, sport, period)`
-  — so the hold/stop/cap rules above are unit-testable without a window, the way
-  `pollDueThisRound`/`sportsBandChipAt` already are.
+- **The interpolator** is `SportsClock.kt`: `clockAt(clock, sport, readAtMs, nowMs, moving)` applies
+  the hold/stop/cap rules, `stampLiveClocks` decides from two consecutive reads whether a clock is
+  running, and `clockStatusAt` swaps only the clock inside the provider's own status line.
+  `rememberClockNow` is the one-second recomposition the badge and the game page share.
+- **The anchors** (`clockReadAtMs`, `clockMoving`) are `@Transient` fields on `SportsEvent`: a
+  reading restored from the disk cache has no anchor, so opening the app cannot start a clock from
+  an hours-old value. They are not part of `SportsCache`'s format.
+- **The fast row** is `SportsFeed.liveScores` / `EspnSportsFeed.liveScores`: one request per live
+  league, carrying every game's score, clock, period and last play. `mergeLiveRow` folds only
+  those fields into the scoreboard's card (logos, venue, broadcasts, odds and the matched channel
+  survive), and `SportsRepository.refreshLive` runs it at `Freshness.LIVE_ROW_MS` (4 s) for at
+  most `LIVE_ROW_LEAGUES` (6) live leagues.
+- **The scoreboard round** stays at `Freshness.LIVE_MS` (10 s) as the schedule-and-state backstop:
+  nothing about *which* games exist comes from the fast row. A live game the fast row confirmed
+  within `LIVE_PATCH_TRUST_MS` keeps its live fields when the scoreboard answers, because the
+  scoreboard's cached answer can be older than the fast reading and would otherwise rewind the card.
+  A game that finished is not protected: the scoreboard is the authority on its state.
+- **Tests** need no window: `SportsClockTest` covers tick, hold, stop, resync, soccer and cache;
+  `SportsLiveRowTest` covers the row's parse and what the merge may overwrite.
 - The page's wording stays as it is: nothing here changes what "data from N minutes ago" means, and a
   live card must not claim a fresher score than the last read it actually got.
 
@@ -172,19 +189,19 @@ today, and the free route above already makes the page look live.
 
 The page asks ESPN for the selected day's scoreboard, per league, at one of three paces:
 
-- **live** (a game is in progress): every 10 s — `Freshness.LIVE_MS`, the interval the page's refresh
-  round runs at. The score and the clock are read from the provider and never counted locally, so 10 s
-  is how fresh a live game can look today; the section below measures what the providers actually
-  publish, and what a one-second clock would cost.
+- **live** (a game is in progress): the scoreboard every 10 s — `Freshness.LIVE_MS`, the interval the
+  page's refresh round runs at — and the provider's fast score row every 4 s
+  (`Freshness.LIVE_ROW_MS`), patched into the cards it lists. Between those reads the clock ticks
+  locally (`SportsClock.kt`), so the display moves every second while the *score* is never newer
+  than the read that carried it.
 - **near** (nothing in progress, but a game starts or finished within six hours): once a minute —
   `NEAR_ROUNDS`.
 - **nothing on that day**: every five minutes — `COLD_ROUNDS`; an empty scoreboard does not change.
 
 Only leagues in the first group are asked every round, so the catalog can be long without multiplying
-what ESPN sees. Two other loops run beside it: a live card's own clock comes from the small per-game
-status address every 5 s (`SportsLiveStatus.POLL_MS`), and an open game page re-reads its summary
-(box score, plays, stats — a hundred times the size of a scoreboard) every 30 s
-(`Freshness.LIVE_DETAIL_MS`).
+what ESPN sees. The fast row runs only for leagues that have a game in progress and is capped at six
+at once (`LIVE_ROW_LEAGUES`). An open game page re-reads its summary (box score, plays, stats — a
+hundred times the size of a scoreboard) every 30 s (`Freshness.LIVE_DETAIL_MS`).
 
 Three things keep that traffic acceptable for an unofficial endpoint:
 

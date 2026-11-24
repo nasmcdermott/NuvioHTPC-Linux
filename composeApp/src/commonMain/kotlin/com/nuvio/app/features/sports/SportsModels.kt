@@ -1,6 +1,7 @@
 package com.nuvio.app.features.sports
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 // fork:sports — the data spine of the Sports tab. Nothing here touches the network, the disk or
 // Compose: SportsFeeds produces these, SportsCache stores them and the UI only reads them.
@@ -131,6 +132,18 @@ data class SportsEvent(
     val progress: Float? = null,
     /** Moneyline quote from the scoreboard feed, when this league/provider supplies one. */
     val moneyline: MoneylineOdds? = null,
+    /**
+     * When [clock] was last confirmed by a provider read, for the locally drawn clock. Not part of
+     * the cached model: a reading restored from disk has no anchor, and must not be ticked from
+     * whatever moment the app happens to open.
+     */
+    @Transient val clockReadAtMs: Long = 0L,
+    /**
+     * Whether consecutive reads saw [clock] move. A clock that has read the same for
+     * `CLOCK_HELD_AFTER_MS` is stopped (a timeout, an interval, a review), and the local ticker
+     * holds it rather than counting through the stoppage.
+     */
+    @Transient val clockMoving: Boolean = false,
 ) {
     val isLive: Boolean get() = state == GameState.LIVE
 

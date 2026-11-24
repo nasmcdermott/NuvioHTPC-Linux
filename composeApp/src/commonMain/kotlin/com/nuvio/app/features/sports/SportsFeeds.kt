@@ -21,6 +21,17 @@ internal interface SportsFeed {
     /** [league]'s games right now, however the provider defines that (usually today and yesterday). */
     suspend fun scoreboardNow(league: League): List<SportsEvent>
 
+    /**
+     * The same league's scores from the provider's *fast* surface, for keeping a game in progress up
+     * to date: it is the row the provider's own site polls, and it is served far fresher than the
+     * scoreboard (measured: a cache of 2-7 s against 9 s, see `docs/sports-data-sources.md`).
+     *
+     * Only the live fields are meant to be taken from it - score, clock, period, state, last play -
+     * because it carries less of everything else. Null when the provider has nothing or refused, so
+     * a fast round that fails leaves the scoreboard's data alone.
+     */
+    suspend fun liveScores(league: League): List<SportsEvent>? = null
+
     /** [league]'s teams, for the follow picker and for a game whose team the scoreboard did not name. */
     suspend fun teams(league: League): List<Team>
 

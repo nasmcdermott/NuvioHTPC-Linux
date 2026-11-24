@@ -1309,8 +1309,9 @@ private fun SportsScoreboard(
                         color = tokens.colors.textPrimary,
                     )
                     if (!hideScores && event.isLive && event.clock != null) {
+                        val now = rememberClockNow(event)
                         Text(
-                            text = event.clock,
+                            text = eventClockAt(event, now) ?: event.clock,
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = tokens.colors.danger,

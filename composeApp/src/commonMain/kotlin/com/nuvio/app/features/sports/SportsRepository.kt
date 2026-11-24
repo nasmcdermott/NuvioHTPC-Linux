@@ -49,14 +49,20 @@ internal object SportsRepository {
         // A game in progress is re-read every 10 s. ESPN rewrites the scoreboard as each play lands
         // and the page is showing a clock and a scoreline the viewer is watching, so half a minute
         // made a live game look late on every basket. Only leagues with a game on are asked this
-        // often (see the page's refresh loop); the per-game status address behind a card's own
-        // clock is polled faster still — every 5 s, in SportsLiveStatus.
+        // often (see the page's refresh loop); a card's own clock comes from the fast row every 4 s
+        // (LIVE_ROW_MS) and ticks locally between reads.
         const val LIVE_MS = 10_000L
         // Today, with nothing in progress: kick-offs and final whistles are the only things that
         // change, so a minute is enough and the whole catalog can be asked at that pace.
         const val TODAY_MS = 60_000L
         // The summary behind an open game page: stats and plays, at a stat keeper's pace.
         const val LIVE_DETAIL_MS = 30_000L
+        /**
+         * How often a league with a game in progress is re-read from the fast row. The row's own
+         * answer is allowed to be 2-7 s old, so this is the point where asking again is worth the
+         * request; the scoreboard round (10 s) stays as the schedule-and-state backstop.
+         */
+        const val LIVE_ROW_MS = 4_000L
         const val FUTURE_MS = 30 * 60_000L
         const val PAST_MS = 24 * 60 * 60_000L
         const val TEAMS_MS = 7 * 24 * 60 * 60_000L
@@ -77,6 +83,16 @@ internal object SportsRepository {
          * loop): without it, a failing league looks permanently "never fetched" and is hammered.
          */
         val lastAttemptMs: Long = 0L,
+        /** When the provider's fast row last answered for this day, so it is not asked twice over. */
+        val liveRowAtMs: Long = 0L,
+        /** When the fast row may be asked again after a refusal, so a broken address is not hammered. */
+        val liveRowRetryAtMs: Long = 0L,
+        /**
+         * When the fast row last confirmed each live game. A scoreboard answer can be older than
+         * the fast row reading it would replace (see `preferFastLive`), so this is carried across
+         * scoreboard refreshes rather than rebuilt from them.
+         */
+        val livePatchedAt: Map<String, Long> = emptyMap(),
     ) {
         val isEmpty: Boolean get() = games.isEmpty()
     }
@@ -147,16 +163,26 @@ internal object SportsRepository {
                 state.update { it.copy(loading = true, error = null, lastAttemptMs = now) }
                 try {
                     val games = feedSlots.withPermit { SportsFeeds.current.scoreboard(league, day, day) }
-                    state.value = DayState(
-                        leagueId = leagueId,
-                        day = day,
-                        games = games,
-                        loading = false,
-                        error = null,
-                        fetchedAtMs = now,
-                        lastAttemptMs = now,
-                    )
-                    SportsCache.writeGames(leagueId, day, day, games, now)
+                    // Anchor the clocks when the answer actually arrived, not when the request
+                    // started: a slow response would otherwise age every clock by the round trip.
+                    val readAt = System.currentTimeMillis()
+                    // Work out which live clocks are running against what the page already shows,
+                    // so the card's local ticker knows when to stop (see stampLiveClocks). A live
+                    // game the fast row confirmed moments ago keeps those live fields: the
+                    // scoreboard's cached answer can be older, and must not rewind the score.
+                    state.update { before ->
+                        val stamped = stampLiveClocks(before.games, games, readAt)
+                        before.copy(
+                            games = preferFastLive(stamped, before.games, before.livePatchedAt, readAt),
+                            loading = false,
+                            error = null,
+                            fetchedAtMs = readAt,
+                            lastAttemptMs = readAt,
+                            livePatchedAt = before.livePatchedAt
+                                .filterValues { readAt - it < LIVE_PATCH_TRUST_MS },
+                        )
+                    }
+                    SportsCache.writeGames(leagueId, day, day, state.value.games, readAt)
                     _version.update { it + 1 }
                     log.i { "Loaded ${league.name} $day: ${games.size} games" }
                 } catch (e: CancellationException) {
@@ -202,6 +228,66 @@ internal object SportsRepository {
                     if (error is CancellationException) throw error
                     log.w { "Could not load ${league.name} teams: ${error.message}" }
                 }
+        }
+    }
+
+    private val liveRowInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /** How long a refused fast row waits before it is tried again. */
+    private const val LIVE_ROW_RETRY_MS = 30_000L
+
+    /**
+     * Re-reads [leagueId]'s games in progress from the provider's fast row and patches what the cards
+     * draw - score, clock, period, state, last play - leaving everything else (logos, venue, odds,
+     * the matched channel) as the scoreboard parsed it. Silent on failure: the scoreboard's data
+     * stays, and the page's own round reports a real failure if the league is really gone.
+     *
+     * Called often (a few seconds), so it declines a second request for the same league while one is
+     * in flight, and does nothing when the day has nothing in progress.
+     */
+    fun refreshLive(leagueId: String, day: String) {
+        val league = SportsCatalog.league(leagueId) ?: return
+        val state = states[stateKey(leagueId, day)] ?: return
+        val current = state.value
+        if (current.games.none { it.state == GameState.LIVE }) return
+        val now = System.currentTimeMillis()
+        if (now - current.liveRowAtMs < Freshness.LIVE_ROW_MS) return
+        if (now < current.liveRowRetryAtMs) return
+        if (!liveRowInFlight.add(leagueId)) return
+        scope.launch {
+            try {
+                val fresh = try {
+                    SportsFeeds.current.liveScores(league)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    null
+                }
+                if (fresh == null) {
+                    // Refused or unreachable: leave the scoreboard's data alone and wait before
+                    // asking a broken address again.
+                    state.update { it.copy(liveRowRetryAtMs = System.currentTimeMillis() + LIVE_ROW_RETRY_MS) }
+                    return@launch
+                }
+                if (fresh.isEmpty()) return@launch
+                val readAt = System.currentTimeMillis()
+                val confirmed = fresh.filter { it.isLive }.associate { it.id to readAt }
+                var changed = false
+                state.update { before ->
+                    val merged = mergeLiveRow(before.games, fresh, readAt)
+                    changed = merged != before.games
+                    before.copy(
+                        games = merged,
+                        liveRowAtMs = now,
+                        liveRowRetryAtMs = 0L,
+                        livePatchedAt = before.livePatchedAt
+                            .filterValues { readAt - it < LIVE_PATCH_TRUST_MS } + confirmed,
+                    )
+                }
+                if (changed) _version.update { it + 1 }
+            } finally {
+                liveRowInFlight.remove(leagueId)
+            }
         }
     }
 

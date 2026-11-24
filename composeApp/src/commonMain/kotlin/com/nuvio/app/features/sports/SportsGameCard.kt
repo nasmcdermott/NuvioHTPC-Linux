@@ -335,12 +335,13 @@ private fun SportsGameFooter(
     }
 }
 
-/** "● 3rd · 9:42", "Final", or the kick-off time. */
+/** "● 3rd · 9:42", "Final", or the kick-off time. A live clock ticks locally between reads. */
 @Composable
 internal fun SportsStatusBadge(event: SportsEvent, hideScores: Boolean = false) {
     val tokens = MaterialTheme.nuvio
+    val now = rememberClockNow(event)
     val (text, color) = when (event.state) {
-        GameState.LIVE -> (if (hideScores) "Live" else (event.status ?: "Live")) to tokens.colors.danger
+        GameState.LIVE -> (if (hideScores) "Live" else (clockStatusAt(event, now) ?: "Live")) to tokens.colors.danger
         GameState.POST -> "Final" to tokens.colors.textMuted
         GameState.PRE -> kickoffText(event.startMs).ifBlank { event.status ?: "Scheduled" } to tokens.colors.textSecondary
     }

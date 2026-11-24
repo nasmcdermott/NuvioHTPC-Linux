@@ -233,9 +233,9 @@ internal fun SportsScreen(
                     )
                 if (due) SportsRepository.refresh(league.id, selectedDay)
             }
-            // The clock is read from the provider, never counted locally, so this interval is how
-            // fresh a live score and clock can be: the per-league/day state flows update the
-            // grid's keyed cards in place.
+            // The scoreboard round is the schedule-and-state backstop. Live scores and clocks are
+            // patched in place by the fast row below, and the clock ticks locally between reads;
+            // the per-league/day state flows update the grid's keyed cards.
             delay(SportsRepository.liveRefreshMs)
             round++
             if (!isToday) {
@@ -246,6 +246,21 @@ internal fun SportsScreen(
                 }
                 if (!anyLive) return@LaunchedEffect
             }
+        }
+    }
+
+    // The provider serves a second, faster row for a league - the one its own site's score strip
+    // polls, 2-7 s against the scoreboard's 9 - so a game in progress is re-read from there and its
+    // live parts patched in place (see SportsRepository.refreshLive / mergeLiveRow). It is asked
+    // only for leagues with a game on right now, at Freshness.LIVE_ROW_MS, and the slower round
+    // above stays as the schedule-and-state backstop: nothing about *which* games exist comes from
+    // this one.
+    val liveLeagueIds = rememberLiveLeagueIds(visibleLeagues, selectedDay)
+    LaunchedEffect(liveLeagueIds, selectedDay) {
+        if (liveLeagueIds.isEmpty()) return@LaunchedEffect
+        while (true) {
+            liveLeagueIds.forEach { SportsRepository.refreshLive(it, selectedDay) }
+            delay(SportsRepository.Freshness.LIVE_ROW_MS)
         }
     }
 
@@ -888,6 +903,27 @@ internal fun sportsBandChipAt(
         kotlin.math.abs((entry.value.start + entry.value.endInclusive) / 2f - windowX)
     }?.key
 }
+
+/**
+ * The leagues that have a game in progress, for the fast score round. Capped: every one of them costs
+ * a request every few seconds, and a dozen simultaneous live games is not worth tripling what the
+ * provider sees - the ones beyond the cap are still kept correct by the scoreboard round.
+ */
+@Composable
+private fun rememberLiveLeagueIds(leagues: List<League>, day: String): List<String> {
+    val states = leagues.map { league ->
+        val state by remember(league.id, day) { SportsRepository.dayState(league.id, day) }.collectAsState()
+        league.id to state
+    }
+    val now = System.currentTimeMillis()
+    return states
+        .filter { (_, state) -> state.games.any { resolvedGameState(it, now) == GameState.LIVE } }
+        .map { it.first }
+        .take(LIVE_ROW_LEAGUES)
+}
+
+/** How many live leagues the fast row is asked for at once. */
+private const val LIVE_ROW_LEAGUES = 6
 
 /** How many of the page's games are live right now, for the All Events chip's "· 6 live" tag. */
 @Composable
