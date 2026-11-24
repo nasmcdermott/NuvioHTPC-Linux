@@ -83,6 +83,7 @@ internal data class FirstRunWizardDraft(
     val discoverPanel: Boolean = true,
     val tonightPanel: Boolean = true,
     val liveTvPanel: Boolean = false,
+    val sportsPanel: Boolean = true,
     val youTubePanel: Boolean = false,
     val musicPanel: Boolean = true,
     val gamesPanel: Boolean = false,
@@ -94,6 +95,8 @@ internal data class FirstRunWizardUiState(
     val draft: FirstRunWizardDraft = FirstRunWizardDraft(),
     /** True when opened from Settings rather than automatically on a fresh install. */
     val isRerun: Boolean = false,
+    /** Set when a theme preview returns, so the panel puts focus back on the preview action. */
+    val themePreviewFocusPending: Boolean = false,
 ) {
     val steps: List<FirstRunWizardStep> get() = FirstRunWizardStep.visibleSteps(draft)
     val stepIndex: Int get() = steps.indexOf(step).coerceAtLeast(0)

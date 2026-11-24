@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
@@ -138,6 +140,8 @@ private fun JoinContent(
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val focusRequester = remember { FocusRequester() }
+    val contentFocus = remember { FocusRequester() }
+    val joinFocus = remember { FocusRequester() }
     val shake = remember { Animatable(0f) }
     val prefilled = remember { isValidPartyCode(initialCode) }
     var code by remember {
@@ -202,9 +206,44 @@ private fun JoinContent(
         }
     }
 
+    val joinEnabled = isValidPartyCode(code) && blockedError == null &&
+        error !in setOf(PartyError.NotFound, PartyError.Removed, PartyError.RateLimited)
+    val hasPreview = preview != null
+
+    // Pressing Join disables the button while the request runs, and the code field refuses edits in
+    // that window too. Stand the focus on the page content instead, so Back still has a focus path
+    // during the wait. After a rejection, land on Join when it can be retried, otherwise on the
+    // content; the field remains one Up away for correcting the code.
+    LaunchedEffect(state.busy, shownError, blockedError, joinEnabled) {
+        val target = when {
+            blockedError != null || state.busy -> contentFocus
+            shownError == null -> null
+            joinEnabled -> joinFocus
+            else -> contentFocus
+        } ?: return@LaunchedEffect
+        repeat(15) {
+            if (target.requestFocusLogged()) return@LaunchedEffect
+            delay(16)
+        }
+    }
+
+    // Once the code has been used to find a party, focus moves to the action it enabled. The field
+    // otherwise keeps the keys (Backspace edits the code), leaving Back and the arrows with nowhere
+    // to go; Up from Join returns to the field if the code needs correcting.
+    LaunchedEffect(hasPreview, joinEnabled) {
+        if (!hasPreview || !joinEnabled) return@LaunchedEffect
+        repeat(15) {
+            if (joinFocus.requestFocusLogged()) return@LaunchedEffect
+            delay(16)
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (blockedError != null) return@LaunchedEffect
         if (prefilled) {
+            // The code is typed for the user; keep the keys on the field meanwhile so Back is
+            // never left without a focus path during the preview.
+            focusRequester.requestFocusLogged()
             val target = normalizePartyCode(initialCode).take(PARTY_CODE_LENGTH)
             delay(250)
             target.indices.forEach { index ->
@@ -213,6 +252,10 @@ private fun JoinContent(
             }
             lookUp(target)
         } else {
+            // Take the keys at once when the field is already placed, then retry once the
+            // transition has settled. Without the first attempt, Back would have no focus path
+            // for the first 650ms of the page (and again after leaving a party).
+            focusRequester.requestFocusLogged()
             delay(650)
             focusRequester.requestFocusLogged()
             delay(550)
@@ -223,6 +266,8 @@ private fun JoinContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .focusRequester(contentFocus)
+            .focusable()
             .padding(top = 8.dp, bottom = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -302,12 +347,12 @@ private fun JoinContent(
             text = stringResource(Res.string.party_join_action),
             onClick = ::submit,
             style = DialogButtonStyle.Primary,
-            enabled = isValidPartyCode(code) && blockedError == null &&
-                error !in setOf(PartyError.NotFound, PartyError.Removed, PartyError.RateLimited),
+            enabled = joinEnabled,
             loading = state.busy || previewing,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
+                .height(52.dp)
+                .focusRequester(joinFocus),
         )
         ExperimentalNote(textAlign = TextAlign.Center)
         AnimatedVisibility(
@@ -434,9 +479,20 @@ private fun MediaTitle(media: PartyMedia, centered: Boolean) {
 private fun JoinedContent(party: ActiveParty) {
     val tokens = MaterialTheme.nuvio
     val host = party.member(party.hostMemberId)?.displayName
+    val focusRequester = remember { FocusRequester() }
+    // This step has no controls of its own, and the Join step's field leaves with the transition.
+    // Hold the page's focus here for the 1.6s it is shown, so Back still reaches the page handler.
+    LaunchedEffect(Unit) {
+        repeat(25) {
+            if (focusRequester.requestFocusLogged()) return@LaunchedEffect
+            delay(16)
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .focusRequester(focusRequester)
+            .focusable()
             .padding(top = 48.dp, bottom = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -473,6 +529,15 @@ private fun PartyContent(
     onWatch: (PartyMedia) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val watchFocus = remember { FocusRequester() }
+    // Entering the party replaces the Join step (and the field that held focus), so give the page
+    // a control to stand on. Without it a key Back has no focus path to the page's handler.
+    LaunchedEffect(Unit) {
+        repeat(25) {
+            if (watchFocus.requestFocusLogged()) return@LaunchedEffect
+            delay(16)
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -501,7 +566,8 @@ private fun PartyContent(
                 style = DialogButtonStyle.Primary,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .height(52.dp)
+                    .focusRequester(watchFocus),
             )
             PartyActions(
                 party = party,

@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.settings.platformOffersInterfaceRenderer
+import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.core.ui.AppTheme
 import com.nuvio.app.features.settings.AmoledAppearance
 import com.nuvio.app.core.ui.BalancedPosterCardWidthDp
@@ -32,6 +33,7 @@ import com.nuvio.app.features.navbar.NavBarEntry
 import com.nuvio.app.features.settings.ApiKeySetupContent
 import com.nuvio.app.features.settings.ApiKeySetupStyle
 import com.nuvio.app.features.settings.DesktopNavigationLayout
+import com.nuvio.app.features.settings.SettingsThemePreview
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -120,6 +122,7 @@ import nuvio.composeapp.generated.resources.setup_wizard_panels_games
 import nuvio.composeapp.generated.resources.setup_wizard_panels_later
 import nuvio.composeapp.generated.resources.setup_wizard_panels_live_tv
 import nuvio.composeapp.generated.resources.setup_wizard_panels_music
+import nuvio.composeapp.generated.resources.setup_wizard_panels_sports
 import nuvio.composeapp.generated.resources.setup_wizard_panels_subtitle
 import nuvio.composeapp.generated.resources.setup_wizard_panels_title
 import nuvio.composeapp.generated.resources.setup_wizard_panels_tonight
@@ -142,6 +145,8 @@ import nuvio.composeapp.generated.resources.setup_wizard_posters_title
 import nuvio.composeapp.generated.resources.setup_wizard_renderer_note
 import nuvio.composeapp.generated.resources.setup_wizard_shortcuts_after_finish
 import nuvio.composeapp.generated.resources.setup_wizard_theme_accent
+import nuvio.composeapp.generated.resources.setup_wizard_theme_preview
+import nuvio.composeapp.generated.resources.setup_wizard_theme_preview_description
 import nuvio.composeapp.generated.resources.setup_wizard_theme_subtitle
 import nuvio.composeapp.generated.resources.setup_wizard_theme_title
 import nuvio.composeapp.generated.resources.setup_wizard_trailers_area
@@ -219,6 +224,7 @@ internal fun WizardStepContent(
     draft: FirstRunWizardDraft,
     onDraftChange: DraftChange,
     firstFocus: Modifier,
+    themePreviewFocus: Modifier = Modifier,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         when (step) {
@@ -227,7 +233,7 @@ internal fun WizardStepContent(
             FirstRunWizardStep.Posters -> PostersStep(draft, onDraftChange, firstFocus)
             FirstRunWizardStep.Panels -> PanelsStep(draft, onDraftChange, firstFocus)
             FirstRunWizardStep.ContinueWatching -> ContinueWatchingStep(draft, onDraftChange, firstFocus)
-            FirstRunWizardStep.Theme -> ThemeStep(draft, onDraftChange, firstFocus)
+            FirstRunWizardStep.Theme -> ThemeStep(draft, onDraftChange, firstFocus, themePreviewFocus)
             FirstRunWizardStep.Trailers -> TrailersStep(draft, onDraftChange, firstFocus)
             // The panel focuses Finish here instead: landing in a key field would open the on-screen
             // keyboard for a gamepad user who only wanted to finish.
@@ -525,8 +531,21 @@ private val ContinueWatchingSectionStyle.descriptionRes: StringResource
 // ---------------------------------------------------------------------------------------------
 
 @Composable
-private fun ThemeStep(draft: FirstRunWizardDraft, onDraftChange: DraftChange, firstFocus: Modifier) {
+private fun ThemeStep(
+    draft: FirstRunWizardDraft,
+    onDraftChange: DraftChange,
+    firstFocus: Modifier,
+    previewFocus: Modifier,
+) {
     val tokens = MaterialTheme.nuvio
+    // A real page, not a swatch: the preview applies the draft's theme and opens Settings on
+    // Appearance, where every accent and black mode can be compared in place. Back returns here.
+    WizardActionRow(
+        title = stringResource(Res.string.setup_wizard_theme_preview),
+        description = stringResource(Res.string.setup_wizard_theme_preview_description),
+        onClick = { SettingsThemePreview.begin() },
+        modifier = previewFocus,
+    )
     WizardSectionLabel(stringResource(Res.string.setup_wizard_theme_accent))
     Row(
         modifier = Modifier
@@ -619,6 +638,14 @@ private fun PanelsStep(draft: FirstRunWizardDraft, onDraftChange: DraftChange, f
         checked = draft.liveTvPanel,
         onCheckedChange = { value -> onDraftChange { it.copy(liveTvPanel = value) } },
     )
+    if (AppFeaturePolicy.sportsEnabled) {
+        WizardToggleRow(
+            title = NavBarEntry.Sports.label,
+            description = stringResource(Res.string.setup_wizard_panels_sports),
+            checked = draft.sportsPanel,
+            onCheckedChange = { value -> onDraftChange { it.copy(sportsPanel = value) } },
+        )
+    }
     WizardToggleRow(
         title = NavBarEntry.YouTube.label,
         description = stringResource(Res.string.setup_wizard_panels_youtube),

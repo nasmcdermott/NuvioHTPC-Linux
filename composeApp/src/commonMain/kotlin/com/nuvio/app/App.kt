@@ -194,6 +194,7 @@ import com.nuvio.app.core.ui.PosterZoomAnchorHolder
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.DesktopNavigationGestureBridge
 import com.nuvio.app.features.settings.SettingsBackBridge
+import com.nuvio.app.features.settings.SettingsThemePreview
 import com.nuvio.app.core.ui.DesktopBackRequestSource
 import androidx.compose.runtime.rememberUpdatedState
 import com.nuvio.app.core.ui.PosterZoomOverlayCoordinator
@@ -1853,6 +1854,39 @@ private fun MainAppContent(
         var selectedPosterMenuPosition by remember { mutableStateOf<IntOffset?>(null) }
         var selectedContinueWatchingMenuPosition by remember { mutableStateOf<IntOffset?>(null) }
         var requestedSettingsPageName by rememberSaveable { mutableStateOf<String?>(null) }
+        // Setup can borrow Settings for a theme preview: open the real Appearance page so every
+        // accent and black mode is judged on a real surface, then come back to the same wizard step.
+        val themePreviewActive = SettingsThemePreview.active
+        val themePreviewReturnRequested = SettingsThemePreview.returnRequested
+        var themePreviewReachedSettings by remember { mutableStateOf(false) }
+        LaunchedEffect(themePreviewActive) {
+            if (!themePreviewActive) return@LaunchedEffect
+            requestedSettingsPageName = "Appearance"
+            selectedTab = AppScreenTab.Settings
+        }
+        LaunchedEffect(themePreviewActive, selectedTab) {
+            if (!themePreviewActive) {
+                themePreviewReachedSettings = false
+                return@LaunchedEffect
+            }
+            if (selectedTab == AppScreenTab.Settings) {
+                themePreviewReachedSettings = true
+            } else if (themePreviewReachedSettings) {
+                // Left Settings by another path (Home, a sidebar tab): close the preview without
+                // pulling the user back to a tab they did not ask for.
+                SettingsThemePreview.finish()
+                FirstRunWizardController.syncThemePreviewDraft()
+                FirstRunWizardController.requestThemePreviewFocus()
+            }
+        }
+        LaunchedEffect(themePreviewReturnRequested) {
+            if (!themePreviewReturnRequested) return@LaunchedEffect
+            SettingsThemePreview.finish()
+            FirstRunWizardController.syncThemePreviewDraft()
+            FirstRunWizardController.requestThemePreviewFocus()
+            requestedSettingsPageName = null
+            selectedTab = AppScreenTab.Home
+        }
         // The Library nav item's right-click shortcuts (any nav chrome) land on the local library
         // settings page; the browser variant is opened there by SettingsScreen.
         LaunchedEffect(Unit) {

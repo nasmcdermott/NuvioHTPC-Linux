@@ -75,6 +75,11 @@ class FirstRunWizardDraftTest {
     }
 
     @Test
+    fun `sports is offered as a navigation panel by default`() {
+        assertTrue(FirstRunWizardDraft().sportsPanel)
+    }
+
+    @Test
     fun `an empty draft never asks for a trailer nobody chose`() {
         // The draft's own fallbacks only apply where nothing has been seeded; a fresh install is
         // seeded from NewInstallDefaults instead, and a rerun from the user's own settings.

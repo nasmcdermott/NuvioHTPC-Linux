@@ -4568,7 +4568,9 @@ private fun CustomPlayerCssDialog(
 ) {
     var value by remember { mutableStateOf(initialValue) }
 
-    BasicAlertDialog(onDismissRequest = onDismiss) {
+    // The fork's dialog wrapper, as everywhere else in Settings: it registers Back and lets the
+    // arrows walk the dialog, which plain BasicAlertDialog doesn't do on Linux.
+    SettingsBasicAlertDialog(onDismissRequest = onDismiss) {
         NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp),

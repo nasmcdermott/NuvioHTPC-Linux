@@ -1,7 +1,10 @@
 package com.nuvio.app.features.setup
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -41,6 +44,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -75,9 +79,21 @@ internal fun WizardPrimaryButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     val isHovered by interactionSource.collectIsHoveredAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (enabled && (isFocused || isHovered)) 1.03f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "wizard_primary_scale",
+    )
     Box(
         modifier = modifier
             .defaultMinSize(minWidth = 120.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .nuvioSweepHighlight(
                 highlighted = enabled && (isFocused || isHovered),
                 cornerRadius = NuvioTokens.Radius.button,
@@ -214,6 +230,58 @@ internal fun WizardOptionRow(
                 )
             }
         }
+    }
+}
+
+/**
+ * A row that opens another screen rather than choosing a value: the setup panel's link into the real
+ * Settings screen. Drawn like [WizardOptionRow] so the panel reads as one list, with a chevron in
+ * place of the selected tick.
+ */
+@Composable
+internal fun WizardActionRow(
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = MaterialTheme.nuvio
+    val interactionSource = remember { MutableInteractionSource() }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .wizardFocusFrame(interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .padding(horizontal = NuvioTokens.Space.s12, vertical = NuvioTokens.Space.s10),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s10),
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = tokens.colors.textPrimary,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = tokens.colors.textSecondary,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(
+            imageVector = Icons.Filled.ChevronRight,
+            contentDescription = null,
+            tint = tokens.colors.textSecondary,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 
@@ -473,6 +541,7 @@ internal fun WizardDivider() {
 /**
  * The panel's focus and hover marker: a soft fill on hover, and an accent outline once the row
  * holds keyboard focus. Without the outline a gamepad user could not tell which row Enter acts on.
+ * The row also lifts with a spring, the same focus bounce Settings uses on its quick actions.
  */
 @Composable
 private fun Modifier.wizardFocusFrame(interactionSource: MutableInteractionSource): Modifier {
@@ -487,7 +556,19 @@ private fun Modifier.wizardFocusFrame(interactionSource: MutableInteractionSourc
         if (hovered || focused) Color.White.copy(alpha = 0.06f) else Color.Transparent,
         label = "wizard_focus_fill",
     )
+    val scale by animateFloatAsState(
+        targetValue = if (focused || hovered) 1.02f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "wizard_focus_scale",
+    )
     return this
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
         .clip(WizardRowShape)
         .background(fill, WizardRowShape)
         .border(BorderStroke(1.5.dp, border), WizardRowShape)

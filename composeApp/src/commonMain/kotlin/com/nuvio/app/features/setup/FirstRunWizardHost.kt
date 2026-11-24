@@ -3,6 +3,9 @@ package com.nuvio.app.features.setup
 import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -25,15 +28,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -121,11 +128,27 @@ fun FirstRunWizardPanel(
     val focusManager = LocalFocusManager.current
     val stepFocus = remember { FocusRequester() }
     val primaryFocus = remember { FocusRequester() }
+    val themePreviewFocus = remember { FocusRequester() }
     val panelShape = NuvioGlass.Shape
+    // The panel is a first-run greeting, not a dialog that appears under the pointer: enter with a
+    // short spring from its top-right corner instead of dropping in fully formed. A return from the
+    // theme preview is not an entrance, so it appears settled instead of bouncing again.
+    var entered by remember { mutableStateOf(state.themePreviewFocusPending) }
+    val entrance by animateFloatAsState(
+        targetValue = if (entered) 1f else 0.94f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "setup_panel_bounce",
+    )
+    LaunchedEffect(Unit) { entered = true }
 
     // Whenever a step opens (including the first), focus its first control. Retried because the
     // step's content arrives through an animation and the first frames may not have placed it.
     LaunchedEffect(state.step) {
+        // The return from a theme preview has its own focus target below.
+        if (state.themePreviewFocusPending && state.step == FirstRunWizardStep.Theme) return@LaunchedEffect
         val target = if (state.step == FirstRunWizardStep.Metadata) primaryFocus else stepFocus
         repeat(12) { attempt ->
             delay(if (attempt == 0) 50 else 48)
@@ -133,9 +156,33 @@ fun FirstRunWizardPanel(
         }
     }
 
+    // Coming back from Settings, the panel is composed afresh at the same step. Put the keys back on
+    // the action that opened the preview instead of the first swatch, so returning does not move the
+    // user to a different part of the step.
+    LaunchedEffect(state.themePreviewFocusPending, state.step) {
+        if (!state.themePreviewFocusPending) return@LaunchedEffect
+        if (state.step != FirstRunWizardStep.Theme) {
+            FirstRunWizardController.consumeThemePreviewFocus()
+            return@LaunchedEffect
+        }
+        repeat(12) { attempt ->
+            delay(if (attempt == 0) 50 else 48)
+            if (themePreviewFocus.requestFocusLogged()) {
+                FirstRunWizardController.consumeThemePreviewFocus()
+                return@LaunchedEffect
+            }
+        }
+    }
+
     Column(
         modifier = modifier
             .width(FirstRunWizardPanelWidth)
+            .graphicsLayer {
+                scaleX = entrance
+                scaleY = entrance
+                alpha = ((entrance - 0.94f) / 0.06f).coerceIn(0f, 1f)
+                transformOrigin = TransformOrigin(1f, 0f)
+            }
             .shadow(elevation = 24.dp, shape = panelShape, clip = false)
             .background(
                 NuvioGlass.night(tokens.colors.background, tokens.colors.accent).copy(alpha = PanelGlassOpacity),
@@ -198,6 +245,7 @@ fun FirstRunWizardPanel(
                         draft = state.draft,
                         onDraftChange = FirstRunWizardController::updateDraft,
                         firstFocus = Modifier.focusRequester(stepFocus),
+                        themePreviewFocus = Modifier.focusRequester(themePreviewFocus),
                     )
                 }
             }

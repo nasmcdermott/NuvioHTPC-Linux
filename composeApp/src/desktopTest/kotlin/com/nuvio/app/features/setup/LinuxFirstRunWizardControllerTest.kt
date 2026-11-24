@@ -1,11 +1,15 @@
 package com.nuvio.app.features.setup
 
 import com.nuvio.app.core.storage.DesktopStorage
+import com.nuvio.app.core.ui.AppTheme
 import com.nuvio.app.features.home.*
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.settings.AmoledAppearance
 import com.nuvio.app.features.settings.ApiKeysOnboardingController
 import com.nuvio.app.features.settings.ApiKeysOnboardingStorage
+import com.nuvio.app.features.settings.ThemeSettingsRepository
+import com.nuvio.app.features.sports.SportsSettingsRepository
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.testing.runHeadlessProbe
 import com.nuvio.app.testing.withHeadlessFixture
@@ -34,6 +38,8 @@ class LinuxFirstRunWizardControllerTest {
     @Test fun futureCompletionMarkerPreventsAutomaticRerun() = probe("futureMarker")
     @Test fun existingInstallDoesNotGetFreshDefaults() = probe("existing")
     @Test fun keyOnboardingCommitsLocallyAndRemembersPermanentDismissal() = restart("keysWrite", "keysRead")
+    @Test fun themePreviewSyncsDraftAndFocusWithoutLosingTypedKeys() = probe("themePreview")
+    @Test fun panelsIncludeSportsAndStageWithTheNavigationSwitch() = probe("panels")
 }
 
 internal object LinuxFirstRunWizardControllerProbe {
@@ -161,6 +167,35 @@ internal object LinuxFirstRunWizardControllerProbe {
                 assertEquals(HomeDisplayMode.Basic, homeDisplayModeOf(home()))
                 assertEquals(before.adaptiveHeroVerticalBias, home().adaptiveHeroVerticalBias)
                 assertEquals(before.tvRowDotsEnabled, home().tvRowDotsEnabled)
+            }
+            "themePreview" -> {
+                repeat(state().steps.indexOf(FirstRunWizardStep.Theme)) { FirstRunWizardController.next() }
+                assertEquals(FirstRunWizardStep.Theme, state().step)
+                FirstRunWizardController.updateDraft { it.copy(tmdbApiKey = "typed-but-unsaved") }
+                ThemeSettingsRepository.setTheme(AppTheme.CRIMSON)
+                ThemeSettingsRepository.setAmoledMode(AmoledAppearance.Black)
+
+                FirstRunWizardController.syncThemePreviewDraft()
+
+                assertEquals(AppTheme.CRIMSON, state().draft.theme)
+                assertEquals(AmoledAppearance.Black, state().draft.amoledMode)
+                assertEquals("typed-but-unsaved", state().draft.tmdbApiKey)
+                FirstRunWizardController.requestThemePreviewFocus()
+                assertTrue(state().themePreviewFocusPending)
+                FirstRunWizardController.consumeThemePreviewFocus()
+                assertFalse(state().themePreviewFocusPending)
+                FirstRunWizardController.close()
+            }
+            "panels" -> {
+                assertTrue(state().draft.sportsPanel)
+                SportsSettingsRepository.setEnabled(false)
+                FirstRunWizardController.openManually()
+                assertFalse(state().draft.sportsPanel)
+                FirstRunWizardController.updateDraft { it.copy(sportsPanel = true) }
+                assertTrue(SportsSettingsRepository.settings.value.enabled)
+                FirstRunWizardController.close()
+                assertFalse(SportsSettingsRepository.settings.value.enabled)
+                assertFalse(state().visible)
             }
             "blankKeys" -> {
                 TmdbSettingsRepository.setApiKey("fixture-existing-tmdb")

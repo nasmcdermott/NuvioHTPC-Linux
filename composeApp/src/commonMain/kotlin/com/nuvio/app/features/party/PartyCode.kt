@@ -42,6 +42,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -51,10 +56,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import com.nuvio.app.core.ui.navigationKey
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.trackTextInputFocus
@@ -91,14 +92,15 @@ internal fun CodeField(
             .fillMaxWidth()
             .focusRequester(focusRequester)
             .onFocusChanged { focused = it.isFocused }
-            // A party code is entered, not typed: Back with nothing left to delete belongs to the
-            // page, not the field, so the page can leave Watch Party instead of the field trapping
-            // the keys.
+            // A party code is entered, not typed: with nothing left to delete, Back belongs to the
+            // page, not the field. While the code has characters, the physical Backspace edits it;
+            // any other key bound to Back or Dismiss is a navigation press, so it must still leave
+            // Watch Party instead of being swallowed by the text field.
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                if (code.isNotEmpty()) return@onPreviewKeyEvent false
                 val key = event.navigationKey()
-                if (key == Key.Backspace || key == Key.Escape) {
+                if (key != Key.Backspace && key != Key.Escape) return@onPreviewKeyEvent false
+                if (code.isEmpty() || event.key != Key.Backspace) {
                     onBack()
                     true
                 } else {

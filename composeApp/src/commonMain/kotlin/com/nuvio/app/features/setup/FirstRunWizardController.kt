@@ -9,6 +9,7 @@ import com.nuvio.app.features.navbar.NavBarLayoutRepository
 import com.nuvio.app.features.youtube.YouTubeFeedRepository
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.sports.SportsSettingsRepository
 import com.nuvio.app.features.settings.ApiKeysOnboardingController
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
@@ -79,6 +80,34 @@ internal object FirstRunWizardController {
     fun back() {
         _uiState.update { state ->
             state.copy(step = state.steps[(state.stepIndex - 1).coerceAtLeast(0)])
+        }
+    }
+
+    /**
+     * The Theme step's "Preview theme in Settings" writes through the same repositories Settings
+     * uses, so the wizard's own copy has to catch up when the trip comes back. Only the two values
+     * previewed are pulled: unsaved API keys typed in the wizard must survive the round trip.
+     */
+    fun syncThemePreviewDraft() {
+        val state = _uiState.value
+        if (!state.visible) return
+        val theme = ThemeSettingsRepository.selectedTheme.value
+        val amoled = ThemeSettingsRepository.amoledMode.value
+        if (state.draft.theme == theme && state.draft.amoledMode == amoled) return
+        _uiState.value = state.copy(
+            draft = state.draft.copy(theme = theme, amoledMode = amoled),
+        )
+    }
+
+    fun requestThemePreviewFocus() {
+        _uiState.update { state ->
+            if (state.visible) state.copy(themePreviewFocusPending = true) else state
+        }
+    }
+
+    fun consumeThemePreviewFocus() {
+        _uiState.update { state ->
+            if (state.themePreviewFocusPending) state.copy(themePreviewFocusPending = false) else state
         }
     }
 
@@ -183,6 +212,7 @@ internal object FirstRunWizardController {
         changed(FirstRunWizardDraft::discoverPanel, ThemeSettingsRepository::setDesktopDiscoverTabVisible)
         changed(FirstRunWizardDraft::tonightPanel, NavBarLayoutRepository::setTonightInNav)
         changed(FirstRunWizardDraft::liveTvPanel, IptvRepository::setTabEnabled)
+        changed(FirstRunWizardDraft::sportsPanel, SportsSettingsRepository::setEnabled)
         changed(FirstRunWizardDraft::youTubePanel, YouTubeFeedRepository::setTabEnabled)
         changed(FirstRunWizardDraft::gamesPanel, NavBarLayoutRepository::setGamesInNav)
         changed(FirstRunWizardDraft::musicPanel) { enabled ->
@@ -261,6 +291,7 @@ internal object FirstRunWizardController {
             discoverPanel = ThemeSettingsRepository.desktopDiscoverTabVisible.value,
             tonightPanel = NavBarLayoutRepository.tonightInNav.value,
             liveTvPanel = IptvRepository.settings.value.tabShown,
+            sportsPanel = SportsSettingsRepository.settings.value.enabled,
             youTubePanel = YouTubeFeedRepository.tabEnabled.value == true,
             musicPanel = MusicLibraryRepository.state.value.settings.tabEnabled,
             gamesPanel = NavBarLayoutRepository.gamesInNav.value,

@@ -792,7 +792,7 @@ private val expectedPages: List<PageExpectation> = listOf(
             ExpectedControl("App Font Size", "AppearanceSettingsPage.kt", 277, "slider", skipped = true),
             ExpectedControl("Start in windowed mode", "AppearanceSettingsPage.kt", 292, "switch"),
             ExpectedControl("Close to notification area", "AppearanceSettingsPage.kt", 302, "switch", skipped = true),
-            ExpectedControl("AMOLED Black", "AppearanceSettingsPage.kt", 313, "switch"),
+            ExpectedControl("Theme", "AppearanceSettingsPage.kt", 313, "switch"),
             ExpectedControl("Liquid Glass", "AppearanceSettingsPage.kt", 323, "switch", skipped = true),
             ExpectedControl("Desktop Navigation", "AppearanceSettingsPage.kt", 334, "choice"),
             ExpectedControl("Discover tab", "AppearanceSettingsPage.kt", 354, "switch"),

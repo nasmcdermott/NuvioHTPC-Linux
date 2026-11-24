@@ -198,6 +198,37 @@ internal fun settingsBackTarget(anchorPage: SettingsPage?, parentPage: SettingsP
     (anchorPage ?: parentPage)?.let { SettingsBackTarget.Page(it) } ?: SettingsBackTarget.Home
 
 /**
+ * The setup wizard's temporary trip into Settings to see a theme on a real page.
+ *
+ * While active, Back is a single decision — leave the preview and return to the exact wizard step —
+ * instead of walking Settings' own ladder. Kept next to [SettingsBackBridge] so both the app-level
+ * Back and the page's key path can see it without the wizard owning the Settings screen.
+ */
+internal object SettingsThemePreview {
+    var active by mutableStateOf(false)
+        private set
+    var returnRequested by mutableStateOf(false)
+        private set
+
+    fun begin() {
+        active = true
+        returnRequested = false
+    }
+
+    fun requestReturn() {
+        if (active) returnRequested = true
+    }
+
+    fun finish() {
+        active = false
+        returnRequested = false
+    }
+
+    /** Test hook: a preview left active cannot leak into the next test. */
+    fun clearForTest() = finish()
+}
+
+/**
  * Lets the app-level Back handler ask the open Settings layers to go up one level first, innermost
  * first: an editor or sub-screen closes before the page ladder runs. Each layer registers with its
  * own [token] and removes exactly that token on disposal, so a sub-screen closing can never take
@@ -225,6 +256,12 @@ internal object SettingsBackBridge {
     /** True when a Settings layer took the Back request: the top dialog first, then the innermost handler. */
     fun handle(): Boolean {
         if (DialogBackRegistry.dismissTop()) return true
+        // A theme preview is modal over Settings: once any dialog above it has closed, Back leaves
+        // for the wizard instead of walking the page ladder underneath.
+        if (SettingsThemePreview.active) {
+            SettingsThemePreview.requestReturn()
+            return true
+        }
         for (entry in entries.asReversed()) {
             if (entry.handler()) return true
         }
@@ -738,6 +775,53 @@ internal fun Modifier.settingsBackOnly(onBack: () -> Boolean): Modifier = compos
         if (!onBack()) DesktopNavigationGestureBridge.requestBack()
         true
     }
+}
+
+/**
+ * The page content's last-chance Back: a focused control with no Back of its own (an On/Off
+ * segmented control, a plain button, a switch) lets the key bubble up to the page's list, which
+ * climbs to the categories like a row does. Bubble phase, so rows, editors and text fields still
+ * get the key first and keep their own behaviour.
+ */
+internal fun Modifier.settingsPageBack(onBack: () -> Boolean): Modifier = composed {
+    onKeyEvent { event ->
+        if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+        if (TextInputFocusTracker.active.value) return@onKeyEvent false
+        if (settingsNavKeyAction(event.navigationKey()) != SettingsNavKeyAction.Back) {
+            return@onKeyEvent false
+        }
+        onBack()
+        true
+    }
+}
+
+/**
+ * A setup theme preview's Back: one key leaves Settings for the wizard, even from a focused text
+ * field. Physical Backspace stays with the field so editing still works; Escape and a rebound Back
+ * key leave.
+ */
+internal fun Modifier.settingsThemePreviewBack(): Modifier = composed {
+    onPreviewKeyEvent { event ->
+        if (!SettingsThemePreview.active || event.type != KeyEventType.KeyDown) {
+            return@onPreviewKeyEvent false
+        }
+        if (settingsNavKeyAction(event.navigationKey()) != SettingsNavKeyAction.Back) {
+            return@onPreviewKeyEvent false
+        }
+        if (TextInputFocusTracker.active.value && event.key == Key.Backspace) {
+            return@onPreviewKeyEvent false
+        }
+        SettingsThemePreview.requestReturn()
+        true
+    }
+}
+
+/** Back's destination from a Settings page's content: the category list, else the app's ladder. */
+internal fun settingsBackToCategories(focusManager: FocusManager): Boolean {
+    if (!SettingsSidebarFocus.requestEntry(focusManager)) {
+        DesktopNavigationGestureBridge.requestBack()
+    }
+    return true
 }
 
 /**

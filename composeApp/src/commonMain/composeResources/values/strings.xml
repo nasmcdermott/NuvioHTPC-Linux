@@ -1133,7 +1133,7 @@
     <string name="settings_sync_notifications">Notifications</string>
     <string name="settings_sync_notifications_description">Sync episode-release notification preferences.</string>
     <string name="settings_sync_fork_local_note">Player, poster-card, plugin, desktop layout, and all other fork-specific settings always stay on this device.</string>
-    <string name="settings_appearance_amoled_black">AMOLED Black</string>
+    <string name="settings_appearance_amoled_black">Theme</string>
     <string name="settings_appearance_amoled_description">Use pure black backgrounds for OLED screens.</string>
     <string name="settings_appearance_amoled_off">Light</string>
     <string name="settings_playback_volume_control">Volume Control</string>
@@ -4078,6 +4078,8 @@
     <string name="setup_wizard_theme_title">Theme</string>
     <string name="setup_wizard_theme_subtitle">The accent colour used across the app, and where the navigation sits.</string>
     <string name="setup_wizard_theme_accent">Accent colour</string>
+    <string name="setup_wizard_theme_preview">Preview theme in Settings</string>
+    <string name="setup_wizard_theme_preview_description">Open the real Appearance screen with this theme. Back returns to setup.</string>
     <string name="setup_wizard_display">Display</string>
     <string name="setup_wizard_display_scale_description">Resizes the whole app, text and controls together. 0% is the default; each step is 5%.</string>
     <string name="setup_wizard_trailers_subtitle">What happens when a title in the hero has a trailer.</string>
@@ -4095,6 +4097,7 @@
     <string name="setup_wizard_panels_subtitle">Nuvio does more than films and series. Pick what shows in the navigation; Home, Search and Library are always there.</string>
     <string name="setup_wizard_panels_tonight">Helps pick something to watch tonight, with a few quick questions or a coin toss.</string>
     <string name="setup_wizard_panels_live_tv">TV channels and a guide from an IPTV playlist you add.</string>
+    <string name="setup_wizard_panels_sports">Live scores, schedules and games on your channels. Needs a Live TV playlist.</string>
     <string name="setup_wizard_panels_youtube">Your YouTube home and subscriptions, once you sign in.</string>
     <string name="setup_wizard_panels_music">Albums, artists, lyrics and radio from YouTube Music.</string>
     <string name="setup_wizard_panels_games">A game mode for launching your PC games from the couch.</string>

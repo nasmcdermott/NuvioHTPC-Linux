@@ -351,6 +351,9 @@ fun SettingsScreen(
             // Focus router fallback (KeyLayers): an arrow or OK that went to no one puts focus back on the selected
             // category, and the key is sent on. Replaces SettingsKeyboard.onUnhandledArrow, which swallowed that key.
             .keyLayer("Settings") { SettingsKeyboard.focusPage() }
+            // A setup theme preview is one modal decision: Back returns to the wizard from wherever
+            // the keys are in Settings, including a focused text field.
+            .settingsThemePreviewBack()
             .onFocusChanged { settingsKeyboardRoot.hasFocus = it.hasFocus }
             .focusRequester(homeKeyFocusRequester)
             .focusGroup()
@@ -1986,7 +1989,12 @@ private fun TabletSettingsScreen(
                                 }
                                 .onSizeChanged { listViewportSize.value = it }
                                 .onPlaced { anchorViewport.coordinates = it }
-                                .nestedScroll(rootSearchRevealConnection),
+                                .nestedScroll(rootSearchRevealConnection)
+                                // A control that only knows Select and the arrows (the On/Off
+                                // segmented control, a plain button) leaves Back unhandled; the
+                                // page list catches it after every row and editor has passed and
+                                // climbs to the categories, as Back from a row does.
+                                .settingsPageBack { settingsBackToCategories(focusManager) },
                             contentPadding = PaddingValues(
                                 start = 32.dp,
                                 top = DesktopSettingsPageTopInset,
@@ -3936,12 +3944,32 @@ private fun androidx.compose.foundation.lazy.LazyListScope.watchPartySettingsCon
 ) {
     item(key = "watch_party_page") {
         val invite by com.nuvio.app.features.party.PartyInvites.latest.collectAsStateWithLifecycle()
+        val focusManager = LocalFocusManager.current
+        // The party page is a Settings page, not its own route, so its Back belongs to the
+        // categories like any other page's. The code field keeps Back while it still has digits to
+        // delete (CodeField handles that and calls this once it is empty).
+        val backToCategories: () -> Boolean = { settingsBackToCategories(focusManager) }
+        // The page's key handler only sees Back while something inside it holds focus; the app's
+        // Back (mouse button, controller B) never goes through it. Register the same destination
+        // for that path, and decline when there is no sidebar (the narrow layout) so the app can
+        // still leave Settings.
+        DisposableEffect(focusManager) {
+            val token = Any()
+            SettingsBackBridge.register(token) {
+                SettingsSidebarFocus.requestEntry(focusManager)
+            }
+            onDispose { SettingsBackBridge.unregister(token) }
+        }
         androidx.compose.runtime.key(invite?.id) {
-            com.nuvio.app.features.party.PartyPage(
-                initialCode = invite?.code.orEmpty(),
-                onWatch = onOpenPartyMedia,
-                onBack = {},
-            )
+            // Bubble phase: the code field's own preview deletes a digit first (and calls onBack
+            // once there is none left), and every other control on the page lets Back reach here.
+            Box(modifier = Modifier.settingsPageBack { backToCategories() }) {
+                com.nuvio.app.features.party.PartyPage(
+                    initialCode = invite?.code.orEmpty(),
+                    onWatch = onOpenPartyMedia,
+                    onBack = { backToCategories() },
+                )
+            }
         }
     }
 }

@@ -68,4 +68,29 @@ class PartyCodeBackTest {
         waitForIdle()
         assertEquals(0, backs, "Back on a non-empty code field deletes, not exits")
     }
+
+    @Test
+    fun dismissOnANonEmptyCodeFieldRequestsBack() = runComposeUiTest {
+        var backs = 0
+        val requester = FocusRequester()
+        setContent {
+            NuvioTheme(darkTheme = true, appTheme = AppTheme.CRIMSON) {
+                CodeField(
+                    code = "ABC",
+                    onCodeChange = {},
+                    onDone = {},
+                    focusRequester = requester,
+                    enabled = true,
+                    onBack = { backs += 1 },
+                )
+            }
+        }
+        waitForIdle()
+        runOnIdle { requester.requestFocus() }
+        waitForIdle()
+
+        onRoot().performKeyInput { pressKey(Key.Escape) }
+        waitForIdle()
+        assertEquals(1, backs, "Dismiss on a filled code field leaves instead of editing")
+    }
 }
