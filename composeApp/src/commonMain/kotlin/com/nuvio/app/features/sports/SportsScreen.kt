@@ -102,6 +102,10 @@ internal fun SportsScreen(
         mutableStateOf(days.firstOrNull { it.label == "Today" }?.day ?: days.getOrNull(3)?.day ?: "")
     }
     var selectedSport by rememberSaveable { mutableStateOf<String?>(null) }
+    // One competition picked from the directory above the calendar. The directory itself lists
+    // every league the sport chip has left, so all 55 are reachable there and not only in the
+    // follow dialog.
+    var selectedLeagueId by rememberSaveable { mutableStateOf<String?>(null) }
     var openGameId by rememberSaveable { mutableStateOf<String?>(null) }
     var mySportsOnly by rememberSaveable { mutableStateOf(true) }
     var tablesMode by rememberSaveable { mutableStateOf(false) }
@@ -141,6 +145,24 @@ internal fun SportsScreen(
         // every day used to come up on the same chip whatever x it came from.
         return com.nuvio.app.core.ui.requestFocusInsideGroup(chipsBandFocus, chipFocuser(index))
     }
+    // The league directory is its own rung: sport chips, then every league of that sport, then the
+    // calendar. It records where each chip is drawn for the same positional Up the day strip uses.
+    val leagueBandFocus = remember { FocusRequester() }
+    val leagueChipFocus = remember { mutableMapOf<Int, FocusRequester>() }
+    val leagueChipBounds = remember { mutableMapOf<Int, ClosedFloatingPointRange<Float>>() }
+    var focusedLeagueChipIndex by remember { mutableStateOf(0) }
+    fun leagueChipFocuser(index: Int): FocusRequester =
+        leagueChipFocus.getOrPut(index) { FocusRequester() }
+    fun leagueChipBoundsOf(index: Int): Modifier = Modifier
+        .onGloballyPositioned { coords ->
+            val bounds = coords.boundsInWindow()
+            leagueChipBounds[index] = bounds.left.toFloat()..bounds.right.toFloat()
+        }
+        .onFocusChanged { if (it.isFocused) focusedLeagueChipIndex = index }
+    fun pickLeagueBandAt(windowX: Float?): Boolean {
+        val index = sportsBandChipAt(leagueChipBounds, windowX) ?: return false
+        return com.nuvio.app.core.ui.requestFocusInsideGroup(leagueBandFocus, leagueChipFocuser(index))
+    }
     val dateBandFocus = remember { FocusRequester() }
     val tablesBandFocus = remember { FocusRequester() }
     val detailBandFocus = remember { FocusRequester() }
@@ -172,8 +194,20 @@ internal fun SportsScreen(
     }
     val sports = remember(leagues) { SportsCatalog.sportsOf(leagues) }
     val sport = selectedSport?.let { name -> sports.firstOrNull { it.name == name } }
-    val visibleLeagues = remember(leagues, sport) {
-        if (sport == null) leagues else leagues.filter { it.sport == sport }
+    // The league directory: every competition the sport chip has left, followed ones first. All 55
+    // appear here until a sport narrows it.
+    val directoryLeagues = remember(leagues, sport, settings.followedLeagues) {
+        val inSport = if (sport == null) leagues else leagues.filter { it.sport == sport }
+        inSport.sortedByDescending { it.id in settings.followedLeagues }
+    }
+    val visibleLeagues = remember(directoryLeagues, selectedLeagueId) {
+        directoryLeagues.filter { selectedLeagueId == null || it.id == selectedLeagueId }
+    }
+    // A league picked from another sport would leave the page empty; changing the sport clears it.
+    LaunchedEffect(directoryLeagues) {
+        if (selectedLeagueId != null && directoryLeagues.none { it.id == selectedLeagueId }) {
+            selectedLeagueId = null
+        }
     }
 
     // Fetch the selected day for visible leagues, then keep polling while there is something live
@@ -331,11 +365,29 @@ internal fun SportsScreen(
                 SportsChooseLeaguesBand(
                     sports = sports,
                     selected = sport,
-                    leagueCount = visibleLeagues.size,
+                    leagueCount = directoryLeagues.size,
                     bandRequester = chipsBandFocus,
                     chipFocus = ::chipFocuser,
                     chipBounds = ::chipBoundsOf,
-                    onSelect = { selectedSport = it?.name },
+                    leagues = directoryLeagues,
+                    followedLeagueIds = settings.followedLeagues,
+                    selectedLeagueId = selectedLeagueId,
+                    onSelectLeague = { id ->
+                        // Picking the league that is already on clears the filter, so the chip is a
+                        // toggle and the directory never traps the day on one competition.
+                        selectedLeagueId = if (selectedLeagueId == id) null else id
+                        openGameId = null
+                    },
+                    leagueBandRequester = leagueBandFocus,
+                    leagueChipFocus = ::leagueChipFocuser,
+                    leagueChipBounds = ::leagueChipBoundsOf,
+                    onLeagueUp = {
+                        val windowX = leagueChipBounds[focusedLeagueChipIndex]
+                            ?.let { (it.start + it.endInclusive) / 2f }
+                        pickSportBandAt(windowX) || headerBandFocus.requestFocusLogged()
+                    },
+                    onLeagueDown = { dateBandFocus.requestFocusLogged() },
+                    onSelect = { selectedSport = it?.name; selectedLeagueId = null },
                     onOpenPicker = { pickerOpen = true },
                     // Up from a chip asks the row above for the control over that chip, the same
                     // way the calendar asks this row: the bar's icons and the page's top-right
@@ -349,7 +401,7 @@ internal fun SportsScreen(
                                 )) ||
                             headerBandFocus.requestFocusLogged()
                     },
-                    onDown = { dateBandFocus.requestFocusLogged() },
+                    onDown = { leagueBandFocus.requestFocusLogged() },
                 )
             }
 
@@ -365,7 +417,11 @@ internal fun SportsScreen(
                     // line up. Only when the band has nothing drawn there does it go on to the
                     // header row and the bar, which is how the top-right pills are still reached.
                     onUp = { windowX ->
-                        pickSportBandAt(windowX) ||
+                        // The row directly above the calendar is the league directory, so that is
+                        // where a day comes up - at the day's own x - and the sport chips are one
+                        // rung further up.
+                        pickLeagueBandAt(windowX) ||
+                            pickSportBandAt(windowX) ||
                             (windowX != null &&
                                 (
                                     RootNavFocus.enterHorizontalEntry(windowX) ||
@@ -684,6 +740,16 @@ private fun SportsChooseLeaguesBand(
     /** Chip 0 is "All", 1..n the sports, and the last one "Change Leagues". */
     chipFocus: (index: Int) -> FocusRequester,
     chipBounds: (index: Int) -> Modifier,
+    /** Every competition the sport chip has left: the league directory on the row below. */
+    leagues: List<League>,
+    followedLeagueIds: Set<String>,
+    selectedLeagueId: String?,
+    onSelectLeague: (String) -> Unit,
+    leagueBandRequester: FocusRequester,
+    leagueChipFocus: (index: Int) -> FocusRequester,
+    leagueChipBounds: (index: Int) -> Modifier,
+    onLeagueUp: () -> Boolean,
+    onLeagueDown: () -> Boolean,
     onSelect: (Sport?) -> Unit,
     onOpenPicker: () -> Unit,
     /** Up asks the row above for the control drawn over the chip that holds the keys. */
@@ -691,6 +757,7 @@ private fun SportsChooseLeaguesBand(
     onDown: () -> Boolean,
 ) {
     val tokens = MaterialTheme.nuvio
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -742,6 +809,43 @@ private fun SportsChooseLeaguesBand(
             modifier = chipBounds(sports.size + 1),
             onClick = onOpenPicker,
         )
+    }
+
+    // The league directory: a chip per competition in the sport above, or all of them while that
+    // says "All". This is the row that lets every one of the catalog's leagues be picked, so the
+    // page never depends on the follow dialog to reach one.
+    if (leagues.isNotEmpty()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .sportsHorizontalBand(
+                    bandRequester = leagueBandRequester,
+                    fallbackRequester = leagueChipFocus(0),
+                    onUp = onLeagueUp,
+                    onDown = onLeagueDown,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
+        ) {
+            LazyRow(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
+                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                itemsIndexed(leagues, key = { _, league -> league.id }) { position, league ->
+                    val followed = league.id in followedLeagueIds
+                    SportsChip(
+                        label = if (followed) "★ ${league.shortName}" else league.shortName,
+                        selected = league.id == selectedLeagueId,
+                        focusRequester = leagueChipFocus(position),
+                        modifier = leagueChipBounds(position),
+                        onClick = { onSelectLeague(league.id) },
+                    )
+                }
+            }
+        }
+    }
     }
 }
 
