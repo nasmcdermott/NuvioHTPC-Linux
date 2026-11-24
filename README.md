@@ -16,7 +16,7 @@
 
 This fork is unaffiliated with the Nuvio team. Don't worry about the commit disparity, Nuvio's team makes many small commits while I bundle everything into a single release commit for simplicity as this is mostly a solo focused project. 
 
-Built off [Slokker's Linux fork](https://github.com/iamSlokker/NuvioDesktop-Linux) of [UmbraProject's NuvioHTPC](https://github.com/UmbraProjects/NuvioDesktop) version of [Nuvio Desktop](https://github.com/NuvioMedia/NuvioDesktop). It supports appimage, flatpack, debian and RPM. It's based on the nightly releases of this project.
+Built off [Slokker's Linux fork](https://github.com/iamSlokker/NuvioDesktop-Linux) of [UmbraProject's NuvioHTPC](https://github.com/UmbraProjects/NuvioDesktop) version of [Nuvio Desktop](https://github.com/NuvioMedia/NuvioDesktop). It supports appimage, flatpack, debian and RPM. It's based on the nightly releases of this project. Sports page inspired by [homelessbrian's NuvioPlusIPTV](https://github.com/homelessbrian/NuvioPlusIPTV) Android TV fork and utilizes [their nuvio-data](https://github.com/homelessbrian/nuvio-data) SportsDB work to include 55 leagues in Linux. 
 
 Linux development status and redistribution gates are documented in the
 [final readiness report](docs/FINAL-READINESS-REPORT.md). See
