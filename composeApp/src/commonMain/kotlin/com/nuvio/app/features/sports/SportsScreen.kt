@@ -813,7 +813,9 @@ private fun SportsChooseLeaguesBand(
 
     // The league directory: a chip per competition in the sport above, or all of them while that
     // says "All". This is the row that lets every one of the catalog's leagues be picked, so the
-    // page never depends on the follow dialog to reach one.
+    // page never depends on the follow dialog to reach one. It carries its own name, the way the
+    // row above starts with "Showing 55 leagues": a row of bare abbreviations (NFL, NBA, UCL) does
+    // not say what it is a row of.
     if (leagues.isNotEmpty()) {
         Row(
             modifier = Modifier
@@ -827,6 +829,12 @@ private fun SportsChooseLeaguesBand(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
         ) {
+            Text(
+                text = "Leagues",
+                style = MaterialTheme.typography.labelLarge,
+                color = tokens.colors.textMuted,
+                maxLines = 1,
+            )
             LazyRow(
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
