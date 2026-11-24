@@ -76,9 +76,15 @@ class SportsCalendarUpTest {
     }
 
     @Test
-    fun `up from a day on the right comes up on the right-hand chips`() = runComposeUiTest {
+    fun `up from a day on the right comes up on the right of the header row`() = runComposeUiTest {
         composePage()
-        repeat(8) { press(Key.DirectionRight) }
+        // One day right puts the keys under the header's right-hand pills (the Follow picker, at
+        // x 763..964). Days further right sit in the gaps between controls, which the row leaves
+        // empty for the floating bar - the bar is asked over them instead.
+        press(Key.DirectionRight)
+        // The strip re-reports a day's position once it is placed; give it a frame or two.
+        mainClock.advanceTimeBy(300)
+        waitForIdle()
 
         val day = focused()!!
         val windowWidth = onRoot().fetchSemanticsNode().boundsInWindow.width
@@ -87,12 +93,12 @@ class SportsCalendarUpTest {
 
         val landed = focused()!!
         assertTrue(
-            landed.boundsInWindow.left > windowWidth / 2,
-            "a day on the right comes up on the right of the row above it: ${describeFocused()}",
+            landed.boundsInWindow.top < day.boundsInWindow.top,
+            "Up leaves the calendar for the header row: ${describeFocused()}",
         )
         assertTrue(
-            landed.boundsInWindow.center.x > day.boundsInWindow.center.x - 200f,
-            "the chip is over the day it came from: ${describeFocused()}",
+            landed.boundsInWindow.left > windowWidth / 2,
+            "a day on the right comes up on the right of the header row: ${describeFocused()}",
         )
     }
 
@@ -116,10 +122,9 @@ class SportsCalendarUpTest {
     }
 
     @Test
-    fun `up from the sport chips reaches the header row`() = runComposeUiTest {
+    fun `up from the sport chips reaches the calendar over them`() = runComposeUiTest {
         composePage()
-        press(Key.DirectionUp) // calendar -> league directory
-        press(Key.DirectionUp) // league directory -> sport chips
+        press(Key.DirectionDown) // calendar -> sport chips
         val chips = focused()!!
 
         press(Key.DirectionUp)
@@ -127,7 +132,7 @@ class SportsCalendarUpTest {
         val landed = focused()!!
         assertTrue(
             landed.boundsInWindow.top < chips.boundsInWindow.top,
-            "Up from the chips reaches the row above them: ${describeFocused()}",
+            "Up from the chips reaches the calendar drawn over them: ${describeFocused()}",
         )
     }
 
@@ -144,33 +149,35 @@ class SportsCalendarUpTest {
     }
 
     @Test
-    fun `the rows above the calendar are the league directory, the sport chips, then the header`() =
+    fun `the rows under the header run calendar, sport chips, league directory, then the games`() =
         runComposeUiTest {
             composePage()
-            val day = focused()!!
             val seen = mutableListOf(describeFocused())
 
             press(Key.DirectionUp)
-            val directory = focused()!!
+            val header = focused()!!
             seen += describeFocused()
-            press(Key.DirectionUp)
+            press(Key.DirectionDown)
+            val calendar = focused()!!
+            seen += describeFocused()
+            press(Key.DirectionDown)
             val chips = focused()!!
             seen += describeFocused()
-            press(Key.DirectionUp)
-            val header = focused()!!
+            press(Key.DirectionDown)
+            val directory = focused()!!
             seen += describeFocused()
 
             assertTrue(
-                directory.boundsInWindow.top < day.boundsInWindow.top,
-                "the league directory is drawn over the calendar: $seen",
+                header.boundsInWindow.top < calendar.boundsInWindow.top,
+                "the header row is drawn over the calendar: $seen",
+            )
+            assertTrue(
+                calendar.boundsInWindow.top < chips.boundsInWindow.top,
+                "the calendar is drawn over the sport chips: $seen",
             )
             assertTrue(
                 chips.boundsInWindow.top < directory.boundsInWindow.top,
                 "the sport chips are drawn over the league directory: $seen",
-            )
-            assertTrue(
-                header.boundsInWindow.top < chips.boundsInWindow.top,
-                "the header row is drawn over the sport chips: $seen",
             )
         }
 

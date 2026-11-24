@@ -159,10 +159,6 @@ internal fun SportsScreen(
             leagueChipBounds[index] = bounds.left.toFloat()..bounds.right.toFloat()
         }
         .onFocusChanged { if (it.isFocused) focusedLeagueChipIndex = index }
-    fun pickLeagueBandAt(windowX: Float?): Boolean {
-        val index = sportsBandChipAt(leagueChipBounds, windowX) ?: return false
-        return com.nuvio.app.core.ui.requestFocusInsideGroup(leagueBandFocus, leagueChipFocuser(index))
-    }
     val dateBandFocus = remember { FocusRequester() }
     val tablesBandFocus = remember { FocusRequester() }
     val detailBandFocus = remember { FocusRequester() }
@@ -351,12 +347,34 @@ internal fun SportsScreen(
                     when {
                         openGame != null && !tablesMode -> detailBandFocus.requestFocusLogged()
                         tablesMode -> tablesBandFocus.requestFocusLogged()
-                        // The sport band is drawn under the header in both modes, so it is the next
-                        // rung down whether My Sports is on or not.
-                        else -> chipsBandFocus.requestFocusLogged()
+                        // The calendar is drawn directly under the header in both modes, so it is
+                        // the next rung down whatever the mode; the filters sit under it.
+                        else -> dateBandFocus.requestFocusLogged()
                     }
                 },
             )
+
+            if (!tablesMode && openGame == null) {
+                SportsDateStrip(
+                    days = days,
+                    selected = selectedDay,
+                    bandRequester = dateBandFocus,
+                    onSelect = { selectedDay = it; openGameId = null },
+                    // Up asks the header row for the control over the day, by the day's own x, the
+                    // way the page's filters ask it: a day on the left reaches the mode chips, one
+                    // on the right the Follow and Refresh pills, and a day under the floating bar
+                    // reaches the bar's icon over it.
+                    onUp = { windowX ->
+                        (windowX != null &&
+                            (
+                                RootNavFocus.enterHorizontalEntry(windowX) ||
+                                    RootNavFocus.enterTopBarNear(windowX)
+                                )) ||
+                            headerBandFocus.requestFocusLogged()
+                    },
+                    onDown = { chipsBandFocus.requestFocusLogged() },
+                )
+            }
 
             // Drawn in both modes: My Sports filters by sport exactly as All Events does, so the
             // row has to exist there too - and, with no band in My Sports, Up from the calendar had
@@ -365,7 +383,6 @@ internal fun SportsScreen(
                 SportsChooseLeaguesBand(
                     sports = sports,
                     selected = sport,
-                    leagueCount = directoryLeagues.size,
                     bandRequester = chipsBandFocus,
                     chipFocus = ::chipFocuser,
                     chipBounds = ::chipBoundsOf,
@@ -386,50 +403,7 @@ internal fun SportsScreen(
                             ?.let { (it.start + it.endInclusive) / 2f }
                         pickSportBandAt(windowX) || headerBandFocus.requestFocusLogged()
                     },
-                    onLeagueDown = { dateBandFocus.requestFocusLogged() },
-                    onSelect = { selectedSport = it?.name; selectedLeagueId = null },
-                    onOpenPicker = { pickerOpen = true },
-                    // Up from a chip asks the row above for the control over that chip, the same
-                    // way the calendar asks this row: the bar's icons and the page's top-right
-                    // pills are reached by where the keys are, not by which row they are in.
-                    onUp = {
-                        val windowX = chipsChipBounds[focusedChipIndex]?.let { (it.start + it.endInclusive) / 2f }
-                        (windowX != null &&
-                            (
-                                RootNavFocus.enterHorizontalEntry(windowX) ||
-                                    RootNavFocus.enterTopBarNear(windowX)
-                                )) ||
-                            headerBandFocus.requestFocusLogged()
-                    },
-                    onDown = { leagueBandFocus.requestFocusLogged() },
-                )
-            }
-
-            if (!tablesMode && openGame == null) {
-                SportsDateStrip(
-                    days = days,
-                    selected = selectedDay,
-                    bandRequester = dateBandFocus,
-                    onSelect = { selectedDay = it; openGameId = null },
-                    // Up steps to the sport band drawn directly above the strip, at the day's own
-                    // x: a day on the left comes up on the left-hand chips and a day on the right
-                    // on the right-hand ones, so the button being left and the one being entered
-                    // line up. Only when the band has nothing drawn there does it go on to the
-                    // header row and the bar, which is how the top-right pills are still reached.
-                    onUp = { windowX ->
-                        // The row directly above the calendar is the league directory, so that is
-                        // where a day comes up - at the day's own x - and the sport chips are one
-                        // rung further up.
-                        pickLeagueBandAt(windowX) ||
-                            pickSportBandAt(windowX) ||
-                            (windowX != null &&
-                                (
-                                    RootNavFocus.enterHorizontalEntry(windowX) ||
-                                        RootNavFocus.enterTopBarNear(windowX)
-                                    )) ||
-                            headerBandFocus.requestFocusLogged()
-                    },
-                    onDown = {
+                    onLeagueDown = {
                         if (mySportsOnly && heroGame != null) {
                             heroFocus.requestFocusLogged()
                         } else {
@@ -437,6 +411,12 @@ internal fun SportsScreen(
                             true
                         }
                     },
+                    onSelect = { selectedSport = it?.name; selectedLeagueId = null },
+                    onOpenPicker = { pickerOpen = true },
+                    // The calendar is the row over the chips, and it opens on the day the page is
+                    // showing rather than wherever the last chip sat.
+                    onUp = { dateBandFocus.requestFocusLogged() },
+                    onDown = { leagueBandFocus.requestFocusLogged() },
                 )
             }
 
@@ -498,7 +478,9 @@ internal fun SportsScreen(
                     enterGridRequests = enterGamesGridRequests,
                     heroFocus = heroFocus,
                     onHeroAvailable = { heroGame = it },
-                    onUpToDateStrip = { dateBandFocus.requestFocusLogged() },
+                    // The row over the games is the league directory; it hands Up on to the sport
+                    // chips and then the calendar.
+                    onUpToDateStrip = { leagueBandFocus.requestFocusLogged() },
                     onUpFromGrid = {
                         if (mySportsOnly && heroGame != null) heroFocus.requestFocusLogged()
                         else dateBandFocus.requestFocusLogged()
@@ -563,11 +545,42 @@ internal fun SportsHeaderBand(
         val bounds = coords.boundsInWindow()
         controlBounds[key] = bounds.left.toFloat()..bounds.right.toFloat()
     }
+    // The row's controls, left to right, drawn or not.
+    val headerControls = listOf(
+        mySportsChipFocus, allEventsChipFocus, tablesChipFocus,
+        expandPillFocus, closePillFocus, followPillFocus, refreshPillFocus,
+    )
+    fun placedHeaderControls(): Map<Int, ClosedFloatingPointRange<Float>> =
+        headerControls.mapIndexedNotNull { index, requester ->
+            controlBounds[requester]?.let { index to it }
+        }.toMap()
+
+    // A control that sits past the row's last one still comes up on the side it was on. The
+    // right-most day is a half pixel past the Follow pill's right edge - its pill is wider than the
+    // row's - and without this it fell back to the row's left-most chip, so Up from the far right
+    // of the calendar landed on the far left of the header.
+    // The control a control below the row reaches by its own x: the one drawn over it, or - past
+    // either end of the row - the end control. The right-most day is half a pixel past the Follow
+    // pill's right edge (its pill is wider than the row's), and without the end rule Up from the far
+    // right of the calendar fell back to the row's left-most chip. The gaps between the controls are
+    // left empty on purpose: that is the floating bar's share of the row, and the calendar asks the
+    // bar second.
+    fun headerControlAt(windowX: Float): Int? {
+        val placed = placedHeaderControls()
+        if (placed.isEmpty()) return null
+        placed.entries.firstOrNull { it.value.contains(windowX) }?.let { return it.key }
+        val first = placed.entries.minByOrNull { it.key }!!
+        val last = placed.entries.maxByOrNull { it.key }!!
+        return when {
+            windowX < first.value.start -> first.key
+            windowX > last.value.endInclusive -> last.key
+            else -> null
+        }
+    }
+
     com.nuvio.app.core.ui.HorizontalEntryHandoff { windowX ->
-        val hit = listOf(
-            mySportsChipFocus, allEventsChipFocus, tablesChipFocus,
-            expandPillFocus, closePillFocus, followPillFocus, refreshPillFocus,
-        ).firstOrNull { controlBounds[it]?.contains(windowX) == true } ?: return@HorizontalEntryHandoff false
+        val hit = headerControlAt(windowX)?.let { headerControls[it] }
+            ?: return@HorizontalEntryHandoff false
         com.nuvio.app.core.ui.requestFocusInsideGroup(headerBandFocus, hit)
     }
     val leftLeavesTheGroup: (androidx.compose.ui.input.key.KeyEvent) -> Boolean = { ev ->
@@ -735,7 +748,6 @@ private fun SportsHeaderPill(
 private fun SportsChooseLeaguesBand(
     sports: List<Sport>,
     selected: Sport?,
-    leagueCount: Int,
     bandRequester: FocusRequester,
     /** Chip 0 is "All", 1..n the sports, and the last one "Change Leagues". */
     chipFocus: (index: Int) -> FocusRequester,
@@ -770,8 +782,10 @@ private fun SportsChooseLeaguesBand(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
     ) {
+        // "Sports • 15": the row's name and how many chips it holds, so the row says what it is a
+        // row of and how much of it there is without counting the chips.
         Text(
-            text = if (leagueCount == 1) "Showing 1 league" else "Showing $leagueCount leagues",
+            text = "Sports • ${sports.size}",
             style = MaterialTheme.typography.labelLarge,
             color = tokens.colors.textMuted,
             maxLines = 1,
@@ -830,7 +844,7 @@ private fun SportsChooseLeaguesBand(
             horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
         ) {
             Text(
-                text = "Leagues",
+                text = "Leagues • ${leagues.size}",
                 style = MaterialTheme.typography.labelLarge,
                 color = tokens.colors.textMuted,
                 maxLines = 1,
