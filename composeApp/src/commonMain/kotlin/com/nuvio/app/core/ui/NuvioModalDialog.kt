@@ -122,7 +122,14 @@ fun NuvioModalDialog(
         // arrow/Back handling on the content column). Both are kept.
         KeyRouteLayer("dialog", menu = false)
         DialogFirstFocus()
-        NuvioDialogSurface(modifier = modifier.widthIn(max = maxWidth).keyLayer("Dialog"), shape = shape) {
+        // A screen of its own for the focus router (KeyLayers): focus lost inside it comes back to its last control.
+        NuvioDialogSurface(
+            modifier = modifier
+                .padding(horizontal = 24.dp, vertical = 20.dp)
+                .widthIn(max = maxWidth)
+                .keyLayer("Dialog"),
+            shape = shape,
+        ) {
           Column(Modifier.arrowKeyFocusNavigation().dismissOnBackKey(onDismissRequest)) {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 22.dp, bottom = 16.dp),
@@ -148,6 +155,7 @@ fun NuvioModalDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .weight(1f, fill = false)
                     .heightIn(max = 620.dp)
                     .padding(horizontal = 24.dp, vertical = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -193,7 +201,14 @@ fun NuvioAlertDialog(
     ) {
         KeyRouteLayer("alert dialog", menu = false)
         DialogFirstFocus()
-        NuvioDialogSurface(modifier = modifier.widthIn(max = maxWidth).keyLayer("Dialog"), shape = shape) {
+        // A screen of its own for the focus router (KeyLayers): focus lost inside it comes back to its last control.
+        NuvioDialogSurface(
+            modifier = modifier
+                .padding(horizontal = 24.dp, vertical = 20.dp)
+                .widthIn(max = maxWidth)
+                .keyLayer("Dialog"),
+            shape = shape,
+        ) {
             // A dialog is its own window: the arrows (and a pad's D-pad) move between its controls and buttons, which
             // desktop Compose leaves to Tab otherwise.
             Column(Modifier.arrowKeyFocusNavigation().dismissOnBackKey(onDismissRequest)) {
@@ -211,6 +226,7 @@ fun NuvioAlertDialog(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .weight(1f, fill = false)
                             .heightIn(max = 560.dp)
                             .padding(horizontal = 24.dp, vertical = 18.dp),
                     ) {

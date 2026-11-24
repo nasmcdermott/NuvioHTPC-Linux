@@ -17,10 +17,12 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.KeyboardInputMode
 import com.nuvio.app.core.ui.RootNavFocus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 
 /**
@@ -29,8 +31,17 @@ import kotlin.test.Test
  */
 @OptIn(ExperimentalTestApi::class)
 class MusicDockFocusRequestTest {
+    // The dock opens for the keys and the pad, not for a pointer that happened to focus a button in
+    // it (upstream's rule: a click focuses what it lands on), so these key-driven tests say that the
+    // keyboard is the input in use.
+    @BeforeTest
+    fun keyboardInUse() {
+        KeyboardInputMode.active = true
+    }
+
     @AfterTest
     fun reset() {
+        KeyboardInputMode.active = false
         MusicPlayback.barCollapsed.value = false
         MusicPlayback.nowPlayingOpen.value = false
         MusicPlayback.slimBar.value = false
