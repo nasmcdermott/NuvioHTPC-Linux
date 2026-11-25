@@ -2676,7 +2676,7 @@ private fun orderDesktopSettingsSidebarItems(
 }
 
 @Composable
-private fun DesktopSettingsSidebarList(
+internal fun DesktopSettingsSidebarList(
     items: List<DesktopSettingsSidebarItem>,
     allItems: List<DesktopSettingsSidebarItem>,
     activeSidebarPage: SettingsPage,
@@ -2688,6 +2688,12 @@ private fun DesktopSettingsSidebarList(
     val hapticFeedback = LocalHapticFeedback.current
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
+    // The category whose section list is open. Selection and expansion are separate: clicking the
+    // open category closes its list without leaving the page, while choosing another category both
+    // opens it and navigates. Following the active page keeps a page opened elsewhere (search, a
+    // link inside a page) unfolded when its category is not the one that was open.
+    var expandedPage by remember { mutableStateOf<SettingsPage?>(activeSidebarPage) }
+    LaunchedEffect(activeSidebarPage) { expandedPage = activeSidebarPage }
     // One requester per category, so an arrow can move the focus to a row without changing which
     // category is open. The selected row still has [SettingsKeyboard.entry] for the page's entry.
     val rowRequesters = remember(items.size) { List(items.size) { FocusRequester() } }
@@ -2748,7 +2754,8 @@ private fun DesktopSettingsSidebarList(
                         // The selected category unfolds its sections directly below the row, so
                         // Down belongs to them first. Every other row steps to the next category
                         // by index, which also reaches a row still below the lazy list's fold.
-                        val sectionsBelow = focusedIndex == selectedIndex && subItems.size > 1
+                        val sectionsBelow = expandedPage == items.getOrNull(focusedIndex)?.page &&
+                            subItems.size > 1
                         if (!sectionsBelow) {
                             if (focusedIndex < items.lastIndex) moveToIndex = focusedIndex + 1
                             // At the last category there is nothing below it: keep the key there
@@ -2782,6 +2789,7 @@ private fun DesktopSettingsSidebarList(
             itemsIndexed(items, key = { _, item -> item.page.name }) { index, item ->
                 ReorderableItem(reorderableLazyListState, key = item.page.name) {
                     val selected = item.page == activeSidebarPage
+                    val expanded = selected && expandedPage == item.page
                     Column(
                         Modifier.onGloballyPositioned {
                             categoryCenters[index] = it.boundsInWindow().center.y
@@ -2805,7 +2813,16 @@ private fun DesktopSettingsSidebarList(
                                     },
                                 )
                             },
-                            onClick = { onPageChange(item.page) },
+                            onClick = {
+                                if (selected) {
+                                    // The category is already open; its name is the handle that
+                                    // folds its section list away again.
+                                    expandedPage = if (expanded) null else item.page
+                                } else {
+                                    expandedPage = item.page
+                                    onPageChange(item.page)
+                                }
+                            },
                             idleZoom = selected && focusedCategories.isEmpty(),
                             onRowFocusChanged = { hasFocus ->
                                 focusedCategories = if (hasFocus) {
@@ -2819,7 +2836,7 @@ private fun DesktopSettingsSidebarList(
                         // are one click away from the sidebar. Only one row is ever open; a single
                         // entry is not worth a tree.
                         AnimatedVisibility(
-                            visible = selected && subItems.size > 1,
+                            visible = expanded && subItems.size > 1,
                             enter = expandVertically() + fadeIn(),
                             exit = shrinkVertically() + fadeOut(),
                         ) {

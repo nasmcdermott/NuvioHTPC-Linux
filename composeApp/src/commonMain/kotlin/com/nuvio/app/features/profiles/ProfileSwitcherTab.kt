@@ -60,12 +60,16 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,8 +83,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
+import com.nuvio.app.core.ui.NavAction
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.accentFill
+import com.nuvio.app.core.ui.navAction
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.sidebarKeyNavigation
 import com.nuvio.app.isIos
@@ -140,6 +146,15 @@ fun ProfileSwitcherTab(
     var popupVisible by remember { mutableStateOf(false) }
     var pinProfile by remember { mutableStateOf<NuvioProfile?>(null) }
     var dragTargetProfileIndex by remember { mutableStateOf<Int?>(null) }
+    // The popup is one focus target that walks its row by index, like the sidebar's stack: the
+    // bubbles themselves stay pointer targets, so a gamepad press cannot land on a control that
+    // then has to be clicked by mouse.
+    val profileFocus = remember { FocusRequester() }
+    var selectorHasFocus by remember { mutableStateOf(false) }
+    var profileFocusIndex by remember { mutableIntStateOf(0) }
+    val profileRowCount = profiles.size + if (profiles.size < 4) 1 else 0
+    val latestProfiles by rememberUpdatedState(profiles)
+    val latestRowCount by rememberUpdatedState(profileRowCount)
     var triggerCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val profileBubbleBounds = remember(profiles.map { it.profileIndex }) {
         mutableStateMapOf<Int, Rect>()
@@ -183,6 +198,38 @@ fun ProfileSwitcherTab(
         dragTargetProfileIndex = null
         if (profile != null) {
             chooseProfile(profile)
+        }
+    }
+
+    fun activateProfileRow(index: Int) {
+        val profile = latestProfiles.getOrNull(index)
+        if (profile != null) {
+            chooseProfile(profile)
+        } else {
+            showPopup = false
+            onAddProfileRequested()
+        }
+    }
+
+    // The active profile is the row the keys land on. The popup content is composed a frame after
+    // showPopup, so request once it has a node, with a couple of retries for slow first frames.
+    LaunchedEffect(showPopup, latestRowCount) {
+        if (!showPopup) return@LaunchedEffect
+        val activeIndex = latestProfiles.indexOfFirst {
+            it.profileIndex == activeProfile?.profileIndex
+        }
+        if (activeIndex >= 0) profileFocusIndex = activeIndex
+        profileFocusIndex = profileFocusIndex.coerceIn(0, (latestRowCount - 1).coerceAtLeast(0))
+        repeat(3) {
+            if (runCatching { profileFocus.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+            kotlinx.coroutines.delay(24)
+        }
+    }
+
+    // A PIN pad takes the keys when it opens; closing it hands them back to the selector.
+    LaunchedEffect(pinProfile) {
+        if (showPopup && pinProfile == null) {
+            runCatching { profileFocus.requestFocus() }
         }
     }
 
@@ -291,6 +338,7 @@ fun ProfileSwitcherTab(
                 com.nuvio.app.core.ui.KeyRouteLayer("profile menu") // the focus router leaves an open menu alone
                 Box(
                     modifier = Modifier
+                        .testTag("profileSwitcherPopup")
                         .imePadding()
                         .graphicsLayer {
                             alpha = popupAlpha.value
@@ -303,6 +351,46 @@ fun ProfileSwitcherTab(
                             tokens.colors.surfaceSheet,
                             tokens.shapes.sheet,
                         )
+                        .focusRequester(profileFocus)
+                        .onFocusChanged { selectorHasFocus = it.hasFocus }
+                        .onPreviewKeyEvent { event ->
+                            val action = event.navAction() ?: return@onPreviewKeyEvent false
+                            // A PIN pad owns the keys while it is open. Arrow/Select must not reach
+                            // the page behind the popup; Back/Dismiss falls through to the pad's
+                            // Escape-to-cancel handler.
+                            if (pinProfile != null) {
+                                return@onPreviewKeyEvent when (action) {
+                                    NavAction.Up, NavAction.Down,
+                                    NavAction.Left, NavAction.Right,
+                                    NavAction.Select -> true
+                                    NavAction.Back, NavAction.Dismiss -> false
+                                }
+                            }
+                            when (action) {
+                                NavAction.Left, NavAction.Right -> {
+                                    if (event.type == KeyEventType.KeyDown) {
+                                        val step = if (action == NavAction.Left) -1 else 1
+                                        profileFocusIndex = (profileFocusIndex + step)
+                                            .coerceIn(0, (latestRowCount - 1).coerceAtLeast(0))
+                                    }
+                                    true
+                                }
+                                NavAction.Select -> {
+                                    if (event.type == KeyEventType.KeyUp) {
+                                        activateProfileRow(profileFocusIndex)
+                                    }
+                                    true
+                                }
+                                NavAction.Back, NavAction.Dismiss -> {
+                                    if (event.type == KeyEventType.KeyDown) showPopup = false
+                                    true
+                                }
+                                // The row is horizontal; Up/Down must not walk out into the bar
+                                // behind the popup.
+                                NavAction.Up, NavAction.Down -> true
+                            }
+                        }
+                        .focusable()
                         .padding(tokens.spacing.sheetPadding),
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -325,6 +413,7 @@ fun ProfileSwitcherTab(
                                     avatars = avatars,
                                     isActive = isActive,
                                     isSelected = isPinTarget || isDragTarget,
+                                    isFocused = selectorHasFocus && profileFocusIndex == index,
                                     delayMs = index * 50,
                                     onBoundsChanged = { bounds ->
                                         profileBubbleBounds[profile.profileIndex] = bounds
@@ -337,6 +426,7 @@ fun ProfileSwitcherTab(
 
                             if (profiles.size < 4) {
                                 PopupAddProfileBubble(
+                                    isFocused = selectorHasFocus && profileFocusIndex == profiles.size,
                                     delayMs = profiles.size * 50,
                                     onClick = {
                                         showPopup = false
@@ -693,6 +783,7 @@ private fun SidebarCompactPinEntry(
         Spacer(modifier = Modifier.height(8.dp))
 
         SidebarCompactPinKeypad(
+            onCancel = onCancel,
             onDigit = { digit ->
                 if (pin.length < 4 && !isVerifying) {
                     error = null
@@ -741,6 +832,7 @@ private fun SidebarCompactPinEntry(
 
 @Composable
 private fun SidebarCompactPinKeypad(
+    onCancel: () -> Unit,
     onDigit: (String) -> Unit,
     onBackspace: () -> Unit,
 ) {
@@ -753,7 +845,7 @@ private fun SidebarCompactPinKeypad(
     )
 
     Column(
-        modifier = Modifier.pinKeyInput(onDigit, onBackspace),
+        modifier = Modifier.pinKeyInput(onDigit, onBackspace, onCancel),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         rows.forEach { row ->
@@ -807,12 +899,18 @@ private fun SidebarCompactPinKeypad(
 
 @Composable
 private fun PopupAddProfileBubble(
+    isFocused: Boolean,
     delayMs: Int,
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
     val itemAlpha = remember { Animatable(0f) }
     val itemScale = remember { Animatable(0.4f) }
+    val focusScale by animateFloatAsState(
+        targetValue = if (isFocused) 1.08f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "popupAddFocusScale",
+    )
 
     LaunchedEffect(Unit) {
         delay(delayMs.toLong())
@@ -833,10 +931,21 @@ private fun PopupAddProfileBubble(
         modifier = Modifier
             .graphicsLayer {
                 alpha = itemAlpha.value
-                scaleX = itemScale.value
-                scaleY = itemScale.value
+                scaleX = itemScale.value * focusScale
+                scaleY = itemScale.value * focusScale
             }
             .clip(tokens.shapes.compactCard)
+            .then(
+                if (isFocused) {
+                    Modifier.border(
+                        tokens.borders.medium + NuvioTokens.Space.hairline,
+                        tokens.colors.accent,
+                        tokens.shapes.compactCard,
+                    )
+                } else {
+                    Modifier
+                },
+            )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -865,8 +974,8 @@ private fun PopupAddProfileBubble(
         Text(
             text = stringResource(Res.string.compose_profile_add_profile),
             style = MaterialTheme.typography.labelSmall.copy(fontSize = NuvioTokens.Type.labelXs),
-            color = tokens.colors.textMuted,
-            fontWeight = FontWeight.Medium,
+            color = if (isFocused) tokens.colors.accent else tokens.colors.textMuted,
+            fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Medium,
             textAlign = TextAlign.Center,
             maxLines = 1,
             modifier = Modifier.width(56.dp),
@@ -880,6 +989,7 @@ private fun PopupProfileBubble(
     avatars: List<AvatarCatalogItem>,
     isActive: Boolean,
     isSelected: Boolean,
+    isFocused: Boolean,
     delayMs: Int,
     onBoundsChanged: (Rect) -> Unit,
     onClick: () -> Unit,
@@ -911,7 +1021,7 @@ private fun PopupProfileBubble(
     }
 
     val pressScale by animateFloatAsState(
-        targetValue = if (isSelected) 1.08f else 1f,
+        targetValue = if (isSelected || isFocused) 1.08f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessLow,
@@ -931,6 +1041,17 @@ private fun PopupProfileBubble(
                 scaleY = itemScale.value * pressScale
             }
             .clip(tokens.shapes.compactCard)
+            .then(
+                if (isFocused) {
+                    Modifier.border(
+                        tokens.borders.medium + NuvioTokens.Space.hairline,
+                        tokens.colors.accent,
+                        tokens.shapes.compactCard,
+                    )
+                } else {
+                    Modifier
+                },
+            )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -955,7 +1076,7 @@ private fun PopupProfileBubble(
                     )
                     .then(
                         when {
-                            isSelected -> Modifier.border(
+                            isSelected || isFocused -> Modifier.border(
                                 tokens.borders.medium + NuvioTokens.Space.hairline,
                                 tokens.colors.borderSelected,
                                 tokens.shapes.avatar,
@@ -1027,8 +1148,8 @@ private fun PopupProfileBubble(
                 stringResource(Res.string.profile_label_number, profile.profileIndex)
             },
             style = MaterialTheme.typography.labelSmall.copy(fontSize = NuvioTokens.Type.labelXs),
-            color = if (isSelected) tokens.colors.accent else tokens.colors.textMuted,
-            fontWeight = if (isActive || isSelected) FontWeight.Bold else FontWeight.Medium,
+            color = if (isSelected || isFocused) tokens.colors.accent else tokens.colors.textMuted,
+            fontWeight = if (isActive || isSelected || isFocused) FontWeight.Bold else FontWeight.Medium,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1135,6 +1256,7 @@ private fun InlinePinEntry(
 
         // Compact number pad
         CompactPinKeypad(
+            onCancel = onCancel,
             onDigit = { digit ->
                 if (pin.length < 4 && !isVerifying) {
                     error = null
@@ -1185,6 +1307,7 @@ private fun InlinePinEntry(
 
 @Composable
 private fun CompactPinKeypad(
+    onCancel: () -> Unit,
     onDigit: (String) -> Unit,
     onBackspace: () -> Unit,
 ) {
@@ -1197,7 +1320,7 @@ private fun CompactPinKeypad(
     )
 
     Column(
-        modifier = Modifier.pinKeyInput(onDigit, onBackspace),
+        modifier = Modifier.pinKeyInput(onDigit, onBackspace, onCancel),
         verticalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
     ) {
         rows.forEach { row ->
