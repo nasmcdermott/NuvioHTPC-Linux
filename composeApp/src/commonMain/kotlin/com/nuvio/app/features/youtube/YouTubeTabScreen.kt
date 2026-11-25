@@ -636,16 +636,27 @@ fun YouTubeTabScreen(
     }
     val rightGroupEdgeFocus = if (browsing) watchPageFocus else hideWatchedFocus
     com.nuvio.app.core.ui.BarSideFocusHandoff(
-        // The search field exists only when the tab draws it (never when the bar hosts the
-        // search), so fall through to the header's first section tab: Left from the bar was a
-        // dead end on every layout with the floating bar.
+        // Enter the header band first: its focusRestorer otherwise redirects a direct request
+        // back to the last section tab the person used, so Right from the bar appeared to do
+        // nothing (or jumped to Home instead of the right-hand group). The search field exists
+        // only when the tab draws it (never when the bar hosts the search), so fall through to
+        // the header's first section tab.
         left = {
-            searchFocus.requestFocusLogged() || headerFocus.requestFocusLogged()
+            if (headerFocus.requestFocusLogged()) {
+                // The bar-hosted layout has no search field to land on: the header's first tab
+                // is the page's left edge, and the keys have still left the bar.
+                searchFocus.requestFocusLogged()
+                true
+            } else {
+                false
+            }
         },
         // No `enabled` gate here: the header (and so the left end) exists signed out too. The
         // right end declines by itself while the Hide watched pill is not drawn, which is the
         // signed-out case, and the bar's own edge handling then does what it always did.
-        right = { rightGroupEdgeFocus.requestFocusLogged() },
+        right = {
+            com.nuvio.app.core.ui.requestFocusInsideGroup(headerFocus, rightGroupEdgeFocus)
+        },
     )
     Column(
         modifier = modifier

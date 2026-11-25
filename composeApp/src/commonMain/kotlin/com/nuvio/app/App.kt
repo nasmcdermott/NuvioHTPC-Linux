@@ -8186,7 +8186,7 @@ private data class SearchPickerEntry(val query: String) {
 }
 
 @Composable
-private fun TabletFloatingTopBar(
+internal fun TabletFloatingTopBar(
     selectedTab: AppScreenTab,
     onTabSelected: (AppScreenTab) -> Unit,
     onProfileSelected: (NuvioProfile) -> Unit,
