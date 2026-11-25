@@ -62,6 +62,18 @@ class DesktopEntryTest(unittest.TestCase):
             launcher.chmod(0o755)
             self.assertEqual([LINK], self.run_launcher(launcher, image))
 
+    def test_launcher_resolves_a_packaging_symlink_before_locating_the_image(self):
+        """RPM ships /usr/bin/nuvio-desktop as a symlink; dirname($0) would then be /usr/bin."""
+        with tempfile.TemporaryDirectory() as temporary:
+            image = Path(temporary) / "image"
+            (image / "bin").mkdir(parents=True)
+            shutil.copy2(HERE / "nuvio-desktop", image / "bin/nuvio-desktop")
+            links = Path(temporary) / "usr/bin"
+            links.mkdir(parents=True)
+            link = links / "nuvio-desktop"
+            link.symlink_to(image / "bin/nuvio-desktop")
+            self.assertEqual([LINK], self.run_launcher(link, image))
+
     def test_deb_and_appimage_wrappers_forward_their_arguments(self):
         source = (HERE / 'formats.py').read_text()
         self.assertIn('exec /opt/nuvio-desktop/bin/nuvio-desktop "$@"', source)

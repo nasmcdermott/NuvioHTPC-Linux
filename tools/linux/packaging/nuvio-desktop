@@ -4,7 +4,8 @@ set -eu
 # No working-directory or PATH discovery of native code, no extraction and no
 # inherited loader override. The JDK libraries native-image emitted load from
 # lib/ beside the executable; lib/runtime/lib holds libjawt.so.
-image=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+self=$(readlink -f -- "$0")
+image=$(CDPATH= cd -- "$(dirname -- "$self")/.." && pwd)
 unset LD_PRELOAD
 export LD_LIBRARY_PATH="$image/lib/native:$image/lib/runtime/lib"
 export GDK_BACKEND=x11
