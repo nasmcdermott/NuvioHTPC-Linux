@@ -1,0 +1,126 @@
+name: Sync upstream
+
+# Polls upstream for new commits and merges them into the Linux branch.
+# Clean merges are pushed directly; conflicting merges open a PR for
+# manual resolution (the PR will show as DIRTY/with conflicts).
+# Upstream pushes cannot be watched by webhook on a repo we don't own,
+# so this polls on a schedule instead.
+
+on:
+  schedule:
+    - cron: "23 */6 * * *" # every 6 hours, off the hour
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: https://github.com/iamSlokker/NuvioDesktop-Linux.git
+  UPSTREAM_BRANCH: linux
+  TARGET_BRANCH: linux-tv-sports
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configure git author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream "$UPSTREAM_REPO"
+          git fetch upstream "$UPSTREAM_BRANCH"
+          echo "UPSTREAM_HEAD=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_ENV"
+          echo "UPSTREAM_HEAD_SHORT=$(git rev-parse --short FETCH_HEAD)" >> "$GITHUB_ENV"
+
+      - name: Check for new upstream commits
+        run: |
+          COUNT=$(git rev-list --count "HEAD..$UPSTREAM_HEAD")
+          echo "New upstream commits: $COUNT"
+          {
+            echo "### Upstream sync"
+            echo ""
+            if [ "$COUNT" -eq 0 ]; then
+              echo "No new commits in \`$UPSTREAM_BRANCH\`; nothing to do."
+            else
+              echo "$COUNT new upstream commit(s) behind:"
+              echo ""
+              git log --oneline --no-decorate "HEAD..$UPSTREAM_HEAD"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "skip=true" >> "$GITHUB_ENV"
+          else
+            echo "skip=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Merge upstream (clean path)
+        if: env.skip == 'false'
+        id: merge
+        run: |
+          if git merge --no-edit "$UPSTREAM_HEAD"; then
+            echo "clean=true" >> "$GITHUB_OUTPUT"
+          else
+            git merge --abort
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push clean merge
+        if: steps.merge.outputs.clean == 'true'
+        run: |
+          git push origin "HEAD:$TARGET_BRANCH"
+
+      - name: Push conflict branch
+        if: steps.merge.outputs.clean == 'false'
+        run: |
+          BRANCH="upstream-sync/$UPSTREAM_HEAD_SHORT"
+          git branch "$BRANCH" "$UPSTREAM_HEAD"
+          if git ls-remote --heads origin "$BRANCH" | grep -q .; then
+            echo "Branch $BRANCH already exists on origin"
+          else
+            git push origin "$BRANCH"
+          fi
+          echo "SYNC_BRANCH=$BRANCH" >> "$GITHUB_ENV"
+
+      - name: Open PR for manual conflict resolution
+        if: steps.merge.outputs.clean == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Reuse the existing PR for this upstream head if there is one
+          if gh pr list --head "$SYNC_BRANCH" --state open --json number --jq 'length' | grep -q '^1$'; then
+            echo "A sync PR for $SYNC_BRANCH is already open; not creating another."
+            exit 0
+          fi
+          gh pr create \
+            --base "$TARGET_BRANCH" \
+            --head "$SYNC_BRANCH" \
+            --title "Sync upstream ($UPSTREAM_BRANCH, $UPSTREAM_HEAD_SHORT) into $TARGET_BRANCH" \
+            --body "Automatic merge of \`$UPSTREAM_HEAD\` into \`$TARGET_BRANCH\` hit conflicts.
+
+          Resolve locally with:
+          \`\`\`sh
+          git fetch origin
+          git checkout $SYNC_BRANCH
+          git merge origin/$TARGET_BRANCH   # or rebase, then merge upstream back in
+          git push origin $SYNC_BRANCH
+          \`\`\`
+
+          ### New upstream commits
+          \`\`\`
+          $(git log --oneline --no-decorate "origin/$TARGET_BRANCH..$UPSTREAM_HEAD")
+          \`\`\`"
