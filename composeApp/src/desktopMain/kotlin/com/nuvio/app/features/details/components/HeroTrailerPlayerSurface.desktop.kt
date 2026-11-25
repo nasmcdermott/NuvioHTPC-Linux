@@ -186,6 +186,9 @@ actual fun HeroTrailerPlayerSurface(
                     backgroundColor = "#000000",
                     muted = muted,
                     volume = effectiveVolume,
+                    // No hero text is drawn on this surface, so the chrome's edge scrims would
+                    // only darken the video's edges - the "black bars" look the box avoids.
+                    edgeFade = false,
                 ),
             ),
         )

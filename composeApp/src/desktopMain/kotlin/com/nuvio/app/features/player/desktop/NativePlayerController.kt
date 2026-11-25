@@ -4276,6 +4276,8 @@ internal fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("heroTrailerBackgroundColor", heroTrailer.backgroundColor)
         append(',')
+        appendJsonField("heroTrailerEdgeFade", heroTrailer.edgeFade)
+        append(',')
         appendJsonField("heroTrailerLogoUrl", heroTrailer.logoUrl)
         append(',')
         appendJsonField("heroTrailerTitle", heroTrailer.title)

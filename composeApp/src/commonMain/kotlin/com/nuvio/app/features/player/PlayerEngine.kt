@@ -619,6 +619,13 @@ data class PlayerHeroTrailerState(
     val muted: Boolean = true,
     /** Hero-trailer volume (0..100) reflected by the overlay volume slider. */
     val volume: Int = 0,
+    /**
+     * Whether the chrome paints its edge scrims (bottom/left/top gradients toward
+     * [backgroundColor]). Home's full-bleed trailer needs them - its text sits on the video - while
+     * the details hero's bounded box has no text on it, and a dark edge on the video is exactly the
+     * "black bars" look the box is not supposed to have.
+     */
+    val edgeFade: Boolean = true,
     /** Pre-show only: the label of the "add to library" pill beside Skip. Empty hides the pill. */
     val libraryLabel: String = "",
     /** Pre-show only: the title is already in the library, so the pill starts out as done. */

@@ -8129,6 +8129,22 @@ const applyHeroTrailer = () => {
     heroTrailerChrome.style.display = "none";
     return;
   }
+  if (state.heroTrailerEdgeFade === false) {
+    // No text sits on this surface (the details hero keeps its lane beside the box): the scrims
+    // would only darken the video's edges, which reads as bars. The chrome stays.
+    heroTrailerFade.style.display = "none";
+    heroTrailerFade.style.backgroundImage = "none";
+    applyHeroTrailerContent();
+    heroTrailerContent.style.display = "flex";
+    heroTrailerChrome.style.display = "flex";
+    const heroVol = clampHeroVolume(state.heroTrailerVolume);
+    heroTrailerMuteIcon.setAttribute("href", heroVol <= 0 ? "#icon-volume-mute" : "#icon-volume");
+    if (heroTrailerVolumeSlider && document.activeElement !== heroTrailerVolumeSlider) {
+      const next = String(heroVol);
+      if (heroTrailerVolumeSlider.value !== next) heroTrailerVolumeSlider.value = next;
+    }
+    return;
+  }
   const { r, g, b } = parseHeroTrailerRgb(state.heroTrailerBackgroundColor);
   const opaque = `rgb(${r}, ${g}, ${b})`;
   const soft = `rgba(${r}, ${g}, ${b}, 0.55)`;
