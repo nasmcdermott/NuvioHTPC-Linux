@@ -285,8 +285,9 @@ struct Player {
         double displayHeight() override { return player.number("video-params/dh"); }
         int64_t frameWidth() override { return player.integer("video-out-params/w", player.integer("video-params/w")); }
         int64_t frameHeight() override { return player.integer("video-out-params/h", player.integer("video-params/h")); }
-        bool capture(AutoCropBars &bars, int64_t &grabWidth, int64_t &grabHeight) override {
-            return captureAutoCropBars(player.mpv, bars, grabWidth, grabHeight);
+        bool capture(AutoCropBars &bars, int64_t &grabWidth, int64_t &grabHeight,
+                     double minimumBar) override {
+            return captureAutoCropBars(player.mpv, bars, grabWidth, grabHeight, minimumBar);
         }
         void setCrop(const std::string &crop) override { setAutoCropVideoCrop(player.mpv, crop); }
         bool titleTaggedImax() override {
@@ -1469,6 +1470,16 @@ JNI_METHOD(void, setResizeMode)(JNIEnv *env, jobject, jlong handle, jint mode) {
         const bool autoCrop = mode == 3 || mode == 4;
         p.property("panscan", mode == 2 || autoCrop ? "1" : "0");
         p.autoCrop.setEnabled(autoCrop, LinuxAutoCrop::Clock::now(), mode == 4);
+    });
+}
+
+// Whether the auto-crop decision is made: it is off (nothing to wait for), or enabled and locked -
+// the hero trailer's quick decision needs four agreeing samples, about two seconds from the first
+// frame, and until then the baked bars are still on screen. A dark trailer that never agrees still
+// locks after enough attempts, and the Kotlin side caps how long the reveal waits regardless.
+JNI_METHOD(jboolean, isAutoCropApplied)(JNIEnv *env, jobject, jlong handle) {
+    return withPlayer(env, handle, [](Player &p) -> jboolean {
+        return !p.autoCrop.enabled() || p.autoCrop.locked() || !p.autoCrop.appliedCrop().empty();
     });
 }
 

@@ -1052,6 +1052,19 @@ internal class NativePlayerController(
      * [quickAutoCrop] is for the hero trailers: Auto Crop that settles in about two seconds from
      * the first frame instead of after five seconds of learning (native mode 4).
      */
+    /**
+     * Whether the auto-crop decision is made, for the hero trailer's reveal: until the Linux crop
+     * has settled, the bars baked into the video are still on screen and the surface should stay
+     * hidden. Answered from the Linux bridge; other platforms (and a Linux bridge without the
+     * symbol) never hold the reveal back, as a missing answer is indistinguishable from "nothing to
+     * wait for".
+     */
+    fun isAutoCropApplied(): Boolean {
+        if (DesktopHostOs.current != DesktopHostOs.LINUX) return true
+        val current = handle.takeIf { it != 0L } ?: return true
+        return runCatching { NativePlayerBridge.isAutoCropApplied(current) }.getOrDefault(true)
+    }
+
     fun setResizeMode(mode: PlayerResizeMode, quickAutoCrop: Boolean = false) {
         lastResizeMode = mode
         lastQuickAutoCrop = quickAutoCrop

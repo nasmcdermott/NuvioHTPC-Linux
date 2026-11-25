@@ -253,11 +253,22 @@ actual fun HeroTrailerPlayerSurface(
         } else if (playWhenReady) controller.play() else controller.pause()
     }
 
+    // How long the reveal may wait for the auto-crop decision. Quick mode settles in about two
+    // seconds; a trailer whose frames stay unjudgeable (a dark scene) locks only after many tries,
+    // and no reveal is worth waiting that long for.
+    val cropGateTimeoutMs = 3_000L
+    var revealRequestedAt = 0L
+
     LaunchedEffect(controller, sourceUrl, effectivePlayWhenReady) {
         var readyReported = false
         var endedReported = false
         while (true) {
             val snapshot = controller.snapshotOffUiThread()
+            val now = System.currentTimeMillis()
+            // The crop is asked only once playback has actually drawn a frame: before that the
+            // decision is by definition not made, and asking early would hold the reveal for the
+            // full timeout on a bar-less trailer that would have been ready at once.
+            val cropApplied = (!firstPaintComplete && !hasPaintedOnce) || controller.isAutoCropApplied()
             if (
                 effectivePlayWhenReady &&
                 (firstPaintComplete || hasPaintedOnce) &&
@@ -265,9 +276,15 @@ actual fun HeroTrailerPlayerSurface(
                 snapshot.isPlaying &&
                 snapshot.positionMs >= 150L
             ) {
-                readyReported = true
-                playbackRevealReady = true
-                latestOnReady.value()
+                // From the moment the trailer could have revealed, wait at most for the crop: the
+                // bars baked into the video are still on screen until the decision is made, and a
+                // reveal over them is exactly what a viewer reads as broken.
+                if (revealRequestedAt == 0L) revealRequestedAt = now
+                if (cropApplied || now - revealRequestedAt >= cropGateTimeoutMs) {
+                    readyReported = true
+                    playbackRevealReady = true
+                    latestOnReady.value()
+                }
             }
             if (snapshot.isEnded && !endedReported) {
                 endedReported = true

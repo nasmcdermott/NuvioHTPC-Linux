@@ -174,6 +174,9 @@ internal object NativePlayerBridge {
     external fun seekWithinCacheBy(handle: Long, offsetMs: Long)
     external fun setSpeed(handle: Long, speed: Float)
     external fun setResizeMode(handle: Long, mode: Int)
+
+    /** Whether the Linux auto-crop decision is made (see NativePlayerController.isAutoCropApplied). */
+    external fun isAutoCropApplied(handle: Long): Boolean
     external fun durationMs(handle: Long): Long
     external fun positionMs(handle: Long): Long
     external fun bufferedPositionMs(handle: Long): Long

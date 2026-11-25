@@ -49,6 +49,14 @@ void testDetection() {
     auto hairline = frame(1920, 1080, 4, 4, 0, 0);
     require(detectAutoCropBars(hairline.data(), 1920, 1080, 1920 * 4, 4, bars) && bars.top == 0.0, "hairlines dropped");
 
+    // A bar the default floor drops but the quick decision keeps: 10 rows of 1080 is 0.93% - over
+    // kQuickMinimumBar, under kDefaultMinimumBar - the title-card line a YouTube trailer bakes in.
+    auto thin = frame(1920, 1080, 10, 10, 0, 0);
+    require(detectAutoCropBars(thin.data(), 1920, 1080, 1920 * 4, 4, bars) && bars.top == 0.0,
+        "the default floor still drops a 0.9% bar");
+    require(detectAutoCropBars(thin.data(), 1920, 1080, 1920 * 4, 4, bars, kQuickMinimumBar) &&
+        std::abs(bars.top - 10.0 / 1080) < 1e-9, "the quick floor trims it");
+
     auto black = frame(1920, 1080, 0, 0, 0, 0, 0);
     require(!detectAutoCropBars(black.data(), 1920, 1080, 1920 * 4, 4, bars), "a black frame is not judged");
 }
@@ -67,7 +75,7 @@ struct FakeHost : LinuxAutoCrop::Host {
     double displayHeight() override { return 1080; }
     int64_t frameWidth() override { return 1920; }
     int64_t frameHeight() override { return 1080; }
-    bool capture(AutoCropBars &out, int64_t &width, int64_t &height) override {
+    bool capture(AutoCropBars &out, int64_t &width, int64_t &height, double) override {
         ++captures;
         out = bars;
         width = grabWidth;
@@ -264,7 +272,7 @@ struct MpvHost : LinuxAutoCrop::Host {
     double displayHeight() override { return number("video-params/dh"); }
     int64_t frameWidth() override { return integer("video-out-params/w", integer("video-params/w", 0)); }
     int64_t frameHeight() override { return integer("video-out-params/h", integer("video-params/h", 0)); }
-    bool capture(AutoCropBars &bars, int64_t &width, int64_t &height) override {
+    bool capture(AutoCropBars &bars, int64_t &width, int64_t &height, double) override {
         return captureAutoCropBars(mpv, bars, width, height);
     }
     void setCrop(const std::string &crop) override { setAutoCropVideoCrop(mpv, crop); }

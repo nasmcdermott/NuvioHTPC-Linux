@@ -224,17 +224,23 @@ fun DetailHero(
         val boundedHeroTrailerActive = heroTrailerSourceUrl != null &&
             boundedHeroTrailer &&
             heroTrailerReady
-        val heroTrailerArtworkStart = minOf(
-            64.dp + contentMaxWidth.coerceAtMost(620.dp) + 64.dp,
-            maxWidth * 0.44f,
+        val laneEnd = DetailHeroLaneStart + contentMaxWidth.coerceAtMost(DetailHeroLaneMaxWidth)
+        // The trailer is shaped to the video (see [heroTrailerPlacement]), not to the window's
+        // spare space: a mismatched container is what shows bars around a video that has none, and
+        // a box that cuts the title in half reads as a window punched into the page.
+        val placement = heroTrailerPlacement(
+            heroWidth = maxWidth,
+            heroHeight = heroHeight,
+            laneEnd = laneEnd,
         )
         val heroTrailerArtworkBottomPadding = 358.dp
-        // The source picker docks in the trailer area. In narrower windows that runs over the
-        // overlay's content lane, which then fades out under it (laneFadeStart, applied by
+        val heroTrailerStart = placement.start
+        val heroTrailerHeight = placement.height
+        // The source picker docks in the trailer area. In narrower windows that can still run over
+        // the overlay's content lane, which then fades out under it (laneFadeStart, applied by
         // DetailDesktopHeroOverlay while frosted) — a roomy panel over a faded lane reads better
         // than a sliver squeezed beside it.
-        val laneEnd = DetailHeroLaneStart + contentMaxWidth.coerceAtMost(DetailHeroLaneMaxWidth)
-        val streamDockStart = heroTrailerArtworkStart
+        val streamDockStart = heroTrailerStart
         val dockOverlapsLane = streamDockStart < laneEnd
         // The desktop hero draws its content over scrim gradients that normally fade to the theme
         // background. While a bounded trailer plays, the trailer-background setting recolours those
@@ -475,8 +481,8 @@ fun DetailHero(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(
-                                start = heroTrailerArtworkStart,
-                                bottom = heroTrailerArtworkBottomPadding,
+                                start = heroTrailerStart,
+                                bottom = heroHeight - heroTrailerHeight,
                             )
                             .graphicsLayer {
                                 alpha = trailerAlpha
@@ -506,7 +512,7 @@ fun DetailHero(
                             .fillMaxSize()
                             .padding(
                                 start = streamDockStart,
-                                bottom = heroTrailerArtworkBottomPadding - 22.dp,
+                                bottom = heroHeight - heroTrailerHeight - 22.dp,
                             )
                             .onGloballyPositioned { coordinates ->
                                 val bounds = coordinates.boundsInWindow()
@@ -551,6 +557,46 @@ private const val BackdropFrostBlurDp = 28f
 private const val BackdropFrostDim = 0.25f
 private val DetailHeroLaneStart = 64.dp
 private val DetailHeroLaneMaxWidth = 760.dp
+
+/** Where the bounded hero trailer's box sits: [start] from the left, [width] x [height]. */
+internal data class HeroTrailerPlacement(
+    val start: Dp,
+    val width: Dp,
+    val height: Dp,
+)
+
+/** How far the box keeps from the text lane when there is room. */
+private val HeroTrailerLaneGap = 24.dp
+
+/** The strip below the box, where the cast row sits. */
+internal val HeroTrailerBottomClearance = 358.dp
+
+/**
+ * The bounded trailer's box, shaped to the video (16:9, the aspect AutoCrop assumes) rather than to
+ * the window's spare space, and starting past the content lane so nothing on the page is ever cut
+ * by it. Roomy windows give it the full top-right corner; a box taller than the hero's art area
+ * (everything above [bottomClearance]) is clamped and right-aligned, so it stays pinned to the
+ * corner instead of drifting left as the window narrows.
+ *
+ * Kept apart from the composable so the rules - clear of the lane, 16:9, right-aligned when
+ * clamped, never below the cast row - can be checked without a window.
+ */
+internal fun heroTrailerPlacement(
+    heroWidth: Dp,
+    heroHeight: Dp,
+    laneEnd: Dp,
+    bottomClearance: Dp = HeroTrailerBottomClearance,
+): HeroTrailerPlacement {
+    val start = maxOf(
+        laneEnd + HeroTrailerLaneGap,
+        heroWidth * 0.44f,
+    ).coerceAtMost(heroWidth * 0.56f)
+    val maxHeight = heroHeight - bottomClearance
+    val wantedHeight = (heroWidth - start) * 9f / 16f
+    val height = wantedHeight.coerceAtMost(maxHeight)
+    val width = if (wantedHeight > maxHeight) height * 16f / 9f else heroWidth - start
+    return HeroTrailerPlacement(start = heroWidth - width, width = width, height = height)
+}
 /** Width over which the content lane fades out ahead of an overlapping docked picker. */
 private val LaneFadeRamp = 96.dp
 private val DetailHeroRatingsLaneHeight = 26.dp

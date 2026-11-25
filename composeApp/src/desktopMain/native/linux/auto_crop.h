@@ -22,17 +22,23 @@ struct AutoCropBars {
     double top = 0.0, bottom = 0.0, left = 0.0, right = 0.0;
 };
 
+// Bars smaller than this are treated as none. The hero trailer's quick decision uses half of it: a
+// YouTube trailer commonly carries a one- or two-row black line from its title card, which the
+// 1.2% floor (about 13 rows of 1080) would leave on screen for the whole two minutes.
+inline constexpr double kDefaultMinimumBar = 0.012;
+inline constexpr double kQuickMinimumBar = 0.006;
+
 // Finds the black bars baked into one packed frame from screenshot-raw (bytesPerPixel 4 for
 // bgr0/rgb0-style formats, 8 for rgba64). Each edge is walked inwards until a row/column has
 // more than a couple of bright samples (logos and noise are tolerated). Bars are made symmetric
-// (only what both sides agree on is trimmed) and hairlines are dropped. Returns false when the
-// frame cannot be judged, e.g. a fade to black.
+// (only what both sides agree on is trimmed) and bars under [minimumBar] of the frame are dropped.
+// Returns false when the frame cannot be judged, e.g. a fade to black.
 inline bool detectAutoCropBars(const uint8_t *data, int64_t width, int64_t height, int64_t stride,
-                               int bytesPerPixel, AutoCropBars &out) {
+                               int bytesPerPixel, AutoCropBars &out,
+                               double minimumBar = kDefaultMinimumBar) {
     constexpr int threshold = 16;  // 0-255; at or below counts as black
     constexpr int samples = 64;    // probes per row/column, across the middle 90% of the other axis
     constexpr int stray = 2;       // bright probes tolerated per row/column
-    constexpr double minimumBar = 0.012;
     if (!data || width < 64 || height < 64 || stride < width * bytesPerPixel) return false;
 
     auto bright = [&](int64_t x, int64_t y) {
@@ -86,7 +92,8 @@ inline bool detectAutoCropBars(const uint8_t *data, int64_t width, int64_t heigh
 
 // Grabs the current video frame (screenshot-raw "video": no OSD/subtitles, after filters) and
 // measures its bars. The caller owns mpv's lifetime for the duration of the call.
-inline bool captureAutoCropBars(mpv_handle *mpv, AutoCropBars &bars, int64_t &grabWidth, int64_t &grabHeight) {
+inline bool captureAutoCropBars(mpv_handle *mpv, AutoCropBars &bars, int64_t &grabWidth, int64_t &grabHeight,
+                                double minimumBar = kDefaultMinimumBar) {
     char commandName[] = "screenshot-raw";
     char commandFlags[] = "video";
     mpv_node items[2];
@@ -122,7 +129,9 @@ inline bool captureAutoCropBars(mpv_handle *mpv, AutoCropBars &bars, int64_t &gr
     const int bytesPerPixel = format == "rgba64" ? 8
         : (format == "bgr0" || format == "bgra" || format == "rgb0" || format == "rgba") ? 4 : 0;
     bool judged = false;
-    if (bytesPerPixel > 0) judged = detectAutoCropBars(data, width, height, stride, bytesPerPixel, bars);
+    if (bytesPerPixel > 0) {
+        judged = detectAutoCropBars(data, width, height, stride, bytesPerPixel, bars, minimumBar);
+    }
     else std::fprintf(stderr, "Linux auto crop: unsupported screenshot format \"%s\"\n", format.c_str());
     mpv_free_node_contents(&result);
     grabWidth = width;
@@ -153,7 +162,8 @@ public:
         virtual int64_t frameWidth() = 0;
         virtual int64_t frameHeight() = 0;
         // Grabs the current video frame (no OSD/subtitles, after filters) and measures its bars.
-        virtual bool capture(AutoCropBars &bars, int64_t &grabWidth, int64_t &grabHeight) = 0;
+        virtual bool capture(AutoCropBars &bars, int64_t &grabWidth, int64_t &grabHeight,
+                             double minimumBar = kDefaultMinimumBar) = 0;
         // video-crop; empty means no crop.
         virtual void setCrop(const std::string &crop) = 0;
         virtual bool titleTaggedImax() = 0;
@@ -275,7 +285,9 @@ private:
         }
         AutoCropBars measured;
         int64_t grabWidth = 0, grabHeight = 0;
-        if (!host.capture(measured, grabWidth, grabHeight)) return; // unjudgeable frame: keep whatever is applied
+        if (!host.capture(measured, grabWidth, grabHeight, quick ? kQuickMinimumBar : kDefaultMinimumBar)) {
+            return; // unjudgeable frame: keep whatever is applied
+        }
         const AutoCropBars bars = barsOfFullFrame(measured, grabWidth, grabHeight);
         const double frameAspect = frameWidth / frameHeight;
         const double visibleWidth = 1.0 - bars.left - bars.right;
