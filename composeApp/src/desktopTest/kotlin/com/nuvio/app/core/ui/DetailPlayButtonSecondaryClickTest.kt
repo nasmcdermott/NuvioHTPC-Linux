@@ -5,7 +5,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.click
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.rightClick
@@ -14,10 +13,7 @@ import com.nuvio.app.features.details.components.DetailActionButtons
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/**
- * The real details Play button, not a stand-in. Play is a circle like the actions beside it now
- * (DetailIconAction's glass), so its clicks come from the circle's own handlers.
- */
+/** The real details Play button, not a stand-in: it nests its clicks inside Surface + AnimatedContent. */
 @OptIn(ExperimentalTestApi::class)
 class DetailPlayButtonSecondaryClickTest {
 
@@ -36,9 +32,7 @@ class DetailPlayButtonSecondaryClickTest {
             }
         }
 
-        // Play is a circle at the row's start now, named by its tooltip label, not a pill filling
-        // the row: the click has to land on the circle, not the row's empty middle.
-        onNodeWithContentDescription("Resume").performMouseInput { rightClick() }
+        onNodeWithTag("row").performMouseInput { rightClick() }
         waitForIdle()
 
         assertEquals(1, alternate, "right-click should run the alternate play action")
@@ -60,7 +54,7 @@ class DetailPlayButtonSecondaryClickTest {
             }
         }
 
-        onNodeWithContentDescription("Resume").performMouseInput { click() }
+        onNodeWithTag("row").performMouseInput { click() }
         waitForIdle()
 
         assertEquals(1, primary, "left-click should resume")

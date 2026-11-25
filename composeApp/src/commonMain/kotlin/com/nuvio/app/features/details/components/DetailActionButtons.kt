@@ -57,7 +57,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
@@ -130,11 +129,38 @@ fun DetailActionButtons(
     val playPainter = appIconPainter(AppIconResource.PlayerPlay)
     val buttonHeight = if (isTablet) 56.dp else 52.dp
     val iconButtonSize = buttonHeight
+    val playShape = RoundedCornerShape(12.dp)
     val hapticFeedback = LocalHapticFeedback.current
     val searchActive = episodeSearch != null && episodeSearch.active
     // The text editor owns the keyboard while searching, so no button in the row should still be
     // drawing a focus ring behind it.
     val activeFocusedActionIndex = focusedActionIndex.takeUnless { searchActive }
+    // Kept small: this button is wide, so even a few percent of scale would push its edge into
+    // the secondary buttons beside it.
+    // Real keyboard focus counts too: Details drives the row itself, but a page of ordinary focusable controls (the
+    // music artist page) moves focus onto the buttons and needs them to show it.
+    val playSource = remember { MutableInteractionSource() }
+    val playKeyFocused by playSource.collectIsKeyboardFocusedAsState()
+    val playPressed by playSource.collectIsPressedAsState()
+    val playFocused = activeFocusedActionIndex == 0 || (playKeyFocused && !searchActive)
+    val playTargetScale = when {
+        playPressed -> 0.975f
+        playFocused -> 1.02f
+        else -> 1f
+    }
+    val playScale by animateFloatAsState(
+        targetValue = playTargetScale,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = if (playPressed) Spring.StiffnessHigh else Spring.StiffnessMedium,
+        ),
+        label = "detail_play_scale",
+    )
+    // Focus tints the glass toward the accent rather than outlining it: a stronger wash than the
+    // circles' "on" tint, so a focused Play never reads as a toggled state.
+    val focusTintAlpha by animateFloatAsState(targetValue = if (playFocused) 1f else 0f)
+    val focusTint = MaterialTheme.colorScheme.primary.copy(alpha = PlayFocusTintAlpha * focusTintAlpha)
+    val hasSecondaryActions = secondaryActions.isNotEmpty()
 
     Box(
         modifier = modifier
@@ -142,38 +168,95 @@ fun DetailActionButtons(
             .fillMaxWidth()
             .height(buttonHeight),
     ) {
-        AnimatedContent(
-            targetState = searchActive,
-            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(180)) },
-            label = "detail_play_search",
-        ) { showSearch ->
-            if (showSearch && episodeSearch != null) {
-                // The episode search takes the whole row. It used to morph the wide Play pill in
-                // place; Play is a circle now, and the row is still the one strip the bounded
-                // hero trailer never covers, so the field grows here instead.
-                DetailEpisodeSearchField(
-                    state = episodeSearch,
-                    height = buttonHeight,
-                )
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // Play is a circle like the actions beside it - same glass, same size, icon
-                    // only - so the row reads as one set of toggles. Its label lives in the
-                    // tooltip, and a series' "Play S1E4" with it.
-                    NuvioPosterHoverTooltip(title = playLabel) {
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(buttonHeight)
+                    .graphicsLayer {
+                        scaleX = playScale
+                        scaleY = playScale
+                    }
+                    // The same smoked glass as the circle buttons beside it, so the row reads as one
+                    // set; Play stands out by its width and label rather than by a different fill.
+                    .background(DetailActionGlassBase, playShape)
+                    .then(if (focusTintAlpha > 0f) Modifier.background(focusTint, playShape) else Modifier)
+                    .background(DetailActionGlassSheen, playShape)
+                    .border(1.dp, DetailActionGlassEdge, playShape),
+                shape = playShape,
+                color = Color.Transparent,
+                contentColor = Color.White,
+            ) {
+                AnimatedContent(
+                    targetState = searchActive,
+                    transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(180)) },
+                    label = "detail_play_search",
+                ) { showSearch ->
+                    if (showSearch && episodeSearch != null) {
+                        DetailEpisodeSearchField(
+                            state = episodeSearch,
+                            height = buttonHeight,
+                        )
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    interactionSource = playSource,
+                                    indication = LocalIndication.current,
+                                    onClick = {
+                                        onPlayClick()
+                                    },
+                                    onLongClick = onPlayLongClick,
+                                    role = Role.Button,
+                                )
+                                .secondaryClick(onPlayLongClick)
+                                .height(buttonHeight),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                painter = playPainter,
+                                contentDescription = null,
+                                modifier = Modifier.size(if (isTablet) 20.dp else 18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = playLabel,
+                                style = if (isTablet) {
+                                    MaterialTheme.typography.titleMedium
+                                } else {
+                                    MaterialTheme.typography.titleSmall
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (hasSecondaryActions) {
+                Spacer(modifier = Modifier.width(12.dp))
+                secondaryActions.forEachIndexed { index, action ->
+                    NuvioPosterHoverTooltip(title = action.label) {
                         DetailIconAction(
-                            label = playLabel,
-                            icon = null,
-                            painter = playPainter,
-                            active = false,
-                            focused = activeFocusedActionIndex == 0,
+                            label = action.label,
+                            icon = action.icon,
+                            active = action.isActive,
+                            focused = activeFocusedActionIndex == index + 1,
                             size = iconButtonSize,
-                            onClick = onPlayClick,
-                            onLongClick = onPlayLongClick?.let { longClick ->
+                            onClick = {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                action.onClick()
+                            },
+                            onLongClick = action.onLongClick?.let { longClick ->
                                 {
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                     longClick()
@@ -182,27 +265,8 @@ fun DetailActionButtons(
                         )
                     }
 
-                    secondaryActions.forEachIndexed { index, action ->
+                    if (index != secondaryActions.lastIndex) {
                         Spacer(modifier = Modifier.width(12.dp))
-                        NuvioPosterHoverTooltip(title = action.label) {
-                            DetailIconAction(
-                                label = action.label,
-                                icon = action.icon,
-                                active = action.isActive,
-                                focused = activeFocusedActionIndex == index + 1,
-                                size = iconButtonSize,
-                                onClick = {
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    action.onClick()
-                                },
-                                onLongClick = action.onLongClick?.let { longClick ->
-                                    {
-                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        longClick()
-                                    }
-                                },
-                            )
-                        }
                     }
                 }
             }
@@ -304,15 +368,13 @@ private fun DetailEpisodeSearchField(
 @Composable
 internal fun DetailIconAction(
     label: String,
-    icon: ImageVector?,
+    icon: ImageVector,
     active: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp,
     focused: Boolean = false,
     onLongClick: (() -> Unit)? = null,
-    /** The app's own glyphs (the player's play triangle) arrive as painters, not vectors. */
-    painter: Painter? = null,
 ) {
     val source = remember { MutableInteractionSource() }
     val keyFocused by source.collectIsKeyboardFocusedAsState()
@@ -370,19 +432,11 @@ internal fun DetailIconAction(
                 .secondaryClick(onLongClick),
             contentAlignment = Alignment.Center,
         ) {
-            if (painter != null) {
-                Icon(
-                    painter = painter,
-                    contentDescription = label,
-                    modifier = Modifier.size(21.dp),
-                )
-            } else if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    modifier = Modifier.size(21.dp),
-                )
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                modifier = Modifier.size(21.dp),
+            )
         }
     }
 }
@@ -395,6 +449,9 @@ private val DetailActionGlassSheen = Brush.verticalGradient(
     0f to Color.White.copy(alpha = 0.16f),
     1f to Color.White.copy(alpha = 0.06f),
 )
+
+/** How far a focused Play button's glass is tinted toward the accent. */
+private const val PlayFocusTintAlpha = 0.62f
 
 /** Hairline rim, faint enough not to read as the focus ring. */
 private val DetailActionGlassEdge = Color.White.copy(alpha = 0.12f)
