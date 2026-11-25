@@ -208,10 +208,21 @@ internal object MusicBrainzClient {
         artist: String, album: String, empty: T, parse: (String) -> T, size: (T) -> Int, rich: (T) -> Boolean,
     ): T? {
         fun quote(v: String) = "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-        val query = "release:${quote(album)} AND artist:${quote(artist)}".encodeURLParameter()
-        val search = paced("$BASE/release?query=$query&limit=8&fmt=json") ?: return null
+        suspend fun searchIds(album: String): List<String>? {
+            val query = "release:${quote(album)} AND artist:${quote(artist)}".encodeURLParameter()
+            val search = paced("$BASE/release?query=$query&limit=8&fmt=json") ?: return null
+            return parseMbReleaseSearchIds(search)
+        }
+        // fork:credits-stage - YouTube Music's titles carry suffixes MusicBrainz's do not ("Instant Crush (feat.
+        // Julian Casablancas)" is just "Instant Crush" there), and the exact title finds nothing. On a miss, ask
+        // once more without the trailing bracketed groups. A throttled retry stays null, so it is not cached as "none".
+        var ids = searchIds(album) ?: return null
+        if (ids.isEmpty()) {
+            val stripped = stripTitleSuffixes(album)
+            if (stripped != null) ids = searchIds(stripped) ?: return null
+        }
         var best = empty
-        for (id in parseMbReleaseSearchIds(search).take(CREDIT_EDITIONS)) {
+        for (id in ids.take(CREDIT_EDITIONS)) {
             val body = paced("$BASE/release/$id?inc=recordings+recording-level-rels+work-rels+work-level-rels+artist-rels&fmt=json") ?: return null
             val found = parse(body)
             if (rich(found)) return found
@@ -252,6 +263,24 @@ internal object MusicBrainzClient {
 }
 
 /** https://developers.deezer.com/api: free, no key. Gives release types, covers, fan counts, labels. */
+/** Trailing YouTube Music suffix groups MusicBrainz's titles do not carry ("(feat. …)", "[Remastered]"). */
+private val TRAILING_SUFFIX = Regex("\\s*[(\\[{][^(){}\\[\\]]*[)\\]}]\\s*$")
+
+/**
+ * fork:credits-stage - [title] with its trailing bracketed groups taken off ("Instant Crush (feat. Julian
+ * Casablancas)" to "Instant Crush"), or null when nothing would change. Pure, so it is tested without a request.
+ */
+internal fun stripTitleSuffixes(title: String): String? {
+    var t = title.trim()
+    while (true) {
+        val match = TRAILING_SUFFIX.find(t) ?: break
+        val next = t.removeRange(match.range).trim()
+        if (next.isEmpty()) break
+        t = next
+    }
+    return t.takeIf { it.isNotEmpty() && !it.equals(title.trim(), ignoreCase = true) }
+}
+
 internal object DeezerClient {
     private const val BASE = "https://api.deezer.com"
     private const val MAX_PAGES = 5
