@@ -49,13 +49,18 @@ class NavigationActionRatchetTest {
         "commonMain/kotlin/com/nuvio/app/features/music/MusicDockNotch.kt" to 4,
                 "commonMain/kotlin/com/nuvio/app/features/music/MusicNowPlaying.kt" to 2,
         "commonMain/kotlin/com/nuvio/app/features/music/MusicNowPlayingWidgets.kt" to 2,
-                "commonMain/kotlin/com/nuvio/app/features/music/StageOptionsMenu.kt" to 1,
         "commonMain/kotlin/com/nuvio/app/features/music/library/ConstellationView.kt" to 3,
         "commonMain/kotlin/com/nuvio/app/features/music/library/LibraryErasView.kt" to 1,
         "commonMain/kotlin/com/nuvio/app/features/music/library/MusicLadderScreen.kt" to 1,
         "commonMain/kotlin/com/nuvio/app/features/settings/SettingsLocalLibraryPage.kt" to 4,
         "commonMain/kotlin/com/nuvio/app/features/settings/SettingsSearch.kt" to 2,
         "commonMain/kotlin/com/nuvio/app/features/settings/SettingsSubScreenNav.kt" to 1,
+        // The theme preview's own Back handler keeps the physical Backspace with a focused text field
+        // (deleting) while a rebound Back key still leaves; the navigation press itself reads the funnel.
+        "commonMain/kotlin/com/nuvio/app/features/settings/SettingsNav.kt" to 1,
+        // The party code field edits with the physical Backspace while it has characters; a rebound
+        // Back key leaves instead (the code reads the canonical key, then distinguishes the field's own).
+        "commonMain/kotlin/com/nuvio/app/features/party/PartyCode.kt" to 1,
         "desktopMain/kotlin/com/nuvio/app/features/games/GameRowsSettings.desktop.kt" to 4,
     )
 

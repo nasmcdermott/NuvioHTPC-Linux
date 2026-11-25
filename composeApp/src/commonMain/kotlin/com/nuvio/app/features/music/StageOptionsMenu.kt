@@ -36,9 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
@@ -48,6 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import com.nuvio.app.core.ui.NavAction
+import com.nuvio.app.core.ui.navAction
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.library.musicGlass
 import com.nuvio.app.features.music.library.musicKeyFocusRing
@@ -135,7 +135,8 @@ internal fun StageOptionsMenu(
                         .musicGlass(RoundedCornerShape(20.dp))
                         .background(Color.Black.copy(alpha = 0.35f))
                         .onPreviewKeyEvent { event ->
-                            if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionLeft) {
+                            // The funnel: a rebound Move Left, or a pad bound to it, closes too.
+                            if (event.type == KeyEventType.KeyDown && event.navAction() == NavAction.Left) {
                                 close()
                                 true
                             } else {
