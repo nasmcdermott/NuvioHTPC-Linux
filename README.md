@@ -1,6 +1,8 @@
 <div align="center">
 
-  <img src="https://github.com/tapframe/NuvioTV/blob/main/assets/brand/app_logo_wordmark.png" alt="Nuvio" width="300" />
+  <img src="composeApp/src/commonMain/composeResources/drawable/app_wordmark_text.png" alt="Nuvio" width="300" />
+  <br />
+  <span>HOME THEATRE</span>
   <br />
   <br />
 
