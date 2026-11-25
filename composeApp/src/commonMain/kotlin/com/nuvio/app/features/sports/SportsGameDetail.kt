@@ -61,6 +61,7 @@ import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.MeasureResult
 import androidx.compose.ui.layout.MeasureScope
 import androidx.compose.ui.layout.MultiContentMeasurePolicy
+import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -1883,7 +1884,7 @@ private const val MAX_LIVE_PLAY_BY_PLAY = 30
  * rather than running down beside player stats.
  */
 @Composable
-private fun SportsOddsNewsColumn(
+internal fun SportsOddsNewsColumn(
     event: SportsEvent,
     moneyline: MoneylineOdds?,
     news: List<TeamNews>,
@@ -1943,11 +1944,24 @@ private fun SportsOddsNewsColumn(
                 val width = constraints.maxWidth
                 val gapPx = gap.roundToPx()
                 val children = measurables.map { it.first() }
-                val natural = children.map { it.measure(Constraints(maxWidth = width)) }
-                val gaps = gapPx * (natural.size - 1).coerceAtLeast(0)
-                val heights = natural.map { it.height }.toMutableList()
-                if (constraints.hasBoundedHeight && flexible.isNotEmpty()) {
-                    val extra = (constraints.maxHeight - natural.sumOf { it.height } - gaps).coerceAtLeast(0)
+                val natural = arrayOfNulls<Placeable>(children.size)
+                val stretch = constraints.hasBoundedWidth &&
+                    constraints.hasBoundedHeight &&
+                    flexible.isNotEmpty()
+                children.forEachIndexed { index, child ->
+                    if (!stretch || index !in flexible) {
+                        natural[index] = child.measure(Constraints(maxWidth = width))
+                    }
+                }
+                val gaps = gapPx * (children.size - 1).coerceAtLeast(0)
+                // A child cannot be measured twice. The cards that receive the spare height are
+                // therefore sized from their intrinsic height, then measured exactly once at the
+                // final height below.
+                val heights = children.indices.map { index ->
+                    natural[index]?.height ?: children[index].maxIntrinsicHeight(width)
+                }.toMutableList()
+                if (stretch) {
+                    val extra = (constraints.maxHeight - heights.sum() - gaps).coerceAtLeast(0)
                     val share = extra / flexible.size
                     var remainder = extra % flexible.size
                     flexible.forEach { index ->
@@ -1958,12 +1972,8 @@ private fun SportsOddsNewsColumn(
                         }
                     }
                 }
-                val placed = natural.mapIndexed { index, placeable ->
-                    if (index in flexible && heights[index] != placeable.height) {
-                        children[index].measure(Constraints.fixed(width, heights[index]))
-                    } else {
-                        placeable
-                    }
+                val placed = children.mapIndexed { index, child ->
+                    natural[index] ?: child.measure(Constraints.fixed(width, heights[index]))
                 }
                 val total = placed.sumOf { it.height } + gaps
                 return layout(

@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,6 +35,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 /** One pill in the date strip. */
 internal data class SportsDay(
@@ -86,6 +88,9 @@ internal fun SportsDateStrip(
     modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
+    // One clock for the strip; only the Today pill draws it. Keeping it here rather than in the
+    // header means the time sits with the day it describes and moves with the calendar.
+    val todayClock = rememberSportsClockText()
     val pillRequesters = remember { HashMap<String, FocusRequester>() }
     fun requesterFor(dayKey: String): FocusRequester = pillRequesters.getOrPut(dayKey) { FocusRequester() }
     val selectedRequester = requesterFor(selected)
@@ -111,6 +116,7 @@ internal fun SportsDateStrip(
                 day = day,
                 selected = day.day == selected,
                 focusRequester = requesterFor(day.day),
+                clockText = todayClock.takeIf { day.label == "Today" },
                 onFocusedWindowX = { focusedWindowX = it },
                 onClick = { onSelect(day.day) },
             )
@@ -123,6 +129,7 @@ private fun SportsDayPill(
     day: SportsDay,
     selected: Boolean,
     focusRequester: FocusRequester,
+    clockText: String?,
     onFocusedWindowX: (Float) -> Unit,
     onClick: () -> Unit,
 ) {
@@ -193,5 +200,27 @@ private fun SportsDayPill(
             fontWeight = if (selected || interaction.focused) FontWeight.SemiBold else FontWeight.Medium,
             color = labelColor,
         )
+        // Today carries the live local time under its label. It is the same h:mm a text as the
+        // kick-off times on the cards, so the two can be read against each other at a glance.
+        if (clockText != null) {
+            Text(
+                text = clockText,
+                style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                fontWeight = FontWeight.SemiBold,
+                color = sublabelColor,
+                maxLines = 1,
+            )
+        }
     }
+}
+
+@Composable
+private fun rememberSportsClockText(): String {
+    val clockText by produceState(initialValue = kickoffText(System.currentTimeMillis())) {
+        while (true) {
+            delay(60_000L - (System.currentTimeMillis() % 60_000L))
+            value = kickoffText(System.currentTimeMillis())
+        }
+    }
+    return clockText
 }
