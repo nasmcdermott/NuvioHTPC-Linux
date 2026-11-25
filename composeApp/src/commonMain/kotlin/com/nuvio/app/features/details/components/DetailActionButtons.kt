@@ -63,6 +63,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.AppIconResource
@@ -156,10 +157,11 @@ fun DetailActionButtons(
         ),
         label = "detail_play_scale",
     )
-    // Focus tints the glass toward the accent rather than outlining it: a stronger wash than the
-    // circles' "on" tint, so a focused Play never reads as a toggled state.
-    val focusTintAlpha by animateFloatAsState(targetValue = if (playFocused) 1f else 0f)
-    val focusTint = MaterialTheme.colorScheme.primary.copy(alpha = PlayFocusTintAlpha * focusTintAlpha)
+    // Focus draws the same ring the circle buttons draw - the accent stroke along the pill's edge -
+    // rather than the wash over the glass it used to be: the seat of keyboard focus on page open is
+    // this button, and a full-pill wash reads as a differently coloured control, not a focused one.
+    val focusRingAlpha by animateFloatAsState(targetValue = if (playFocused) 1f else 0f)
+    val focusRingColor = MaterialTheme.colorScheme.primary
     val hasSecondaryActions = secondaryActions.isNotEmpty()
 
     Box(
@@ -183,10 +185,22 @@ fun DetailActionButtons(
                         scaleX = playScale
                         scaleY = playScale
                     }
+                    .drawWithContent {
+                        drawContent()
+                        if (focusRingAlpha <= 0f) return@drawWithContent
+                        // The circles' focus ring (DetailIconAction), rounded to the pill's shape:
+                        // same accent, same 3dp stroke, same fade-in.
+                        val stroke = 3.dp.toPx()
+                        val radius = 12.dp.toPx()
+                        drawRoundRect(
+                            color = focusRingColor.copy(alpha = focusRingColor.alpha * focusRingAlpha),
+                            cornerRadius = CornerRadius(radius, radius),
+                            style = Stroke(width = stroke),
+                        )
+                    }
                     // The same smoked glass as the circle buttons beside it, so the row reads as one
                     // set; Play stands out by its width and label rather than by a different fill.
                     .background(DetailActionGlassBase, playShape)
-                    .then(if (focusTintAlpha > 0f) Modifier.background(focusTint, playShape) else Modifier)
                     .background(DetailActionGlassSheen, playShape)
                     .border(1.dp, DetailActionGlassEdge, playShape),
                 shape = playShape,
@@ -449,9 +463,6 @@ private val DetailActionGlassSheen = Brush.verticalGradient(
     0f to Color.White.copy(alpha = 0.16f),
     1f to Color.White.copy(alpha = 0.06f),
 )
-
-/** How far a focused Play button's glass is tinted toward the accent. */
-private const val PlayFocusTintAlpha = 0.62f
 
 /** Hairline rim, faint enough not to read as the focus ring. */
 private val DetailActionGlassEdge = Color.White.copy(alpha = 0.12f)
