@@ -85,6 +85,26 @@ Description: {CONFIG['display_name']}
     run('dpkg-deb', '--root-owner-group', '--build', deb, artifacts / f'nuvio-desktop_{version}_amd64.deb')
 
 
+def image_sonames(image):
+    """Everything the image provides by library name: SONAMEs, and the file names of
+    libraries without a SONAME tag (the bundled JDK's are loaded by file name)."""
+    names = set()
+    for path in image.rglob('*'):
+        if not path.is_file() or path.is_symlink():
+            continue
+        name = path.name
+        if not (name.endswith('.so') or '.so.' in name):
+            continue
+        try:
+            dynamic = subprocess.check_output(['readelf', '-d', str(path)], text=True,
+                                              stderr=subprocess.DEVNULL)
+        except (OSError, subprocess.CalledProcessError):
+            continue
+        match = re.search(r'\(SONAME\).*?\[(.*?)\]', dynamic)
+        names.add(match.group(1) if match else name)
+    return names
+
+
 def private_sonames(image):
     """SONAMEs of the libraries the image carries and resolves through its own RUNPATH."""
     names = set()
@@ -106,6 +126,32 @@ def private_sonames(image):
     return names
 
 
+def host_soname_requires(image):
+    """The image's own ELF dependencies, as RPM soname-requires the host must satisfy.
+
+    Scans every ELF the package carries outside the private trees (the launcher, the
+    native executable, the bundled JDK libraries and the Compose renderer) and names
+    each needed soname, dropping the ones the image resolves through its own paths.
+    """
+    bundled = image_sonames(image)
+    needed = set()
+    for path in image.rglob('*'):
+        rel = path.relative_to(image).parts
+        if not path.is_file() or path.is_symlink():
+            continue
+        if rel[0] in ('lib/native', 'lib/runtime'):
+            continue
+        try:
+            dynamic = subprocess.check_output(['readelf', '-d', str(path)], text=True,
+                                              stderr=subprocess.DEVNULL)
+        except (OSError, subprocess.CalledProcessError):
+            continue
+        needed.update(re.findall(r'\(NEEDED\).*?\[(.*?)\]', dynamic))
+    # The program interpreter is guaranteed by the architecture's glibc.
+    needed.discard('ld-linux-x86-64.so.2')
+    return sorted(needed - bundled)
+
+
 def build_rpm(work, image, info, artifacts):
     """Direct RPM wrapper around the same canonical image as the DEB.
 
@@ -122,14 +168,15 @@ def build_rpm(work, image, info, artifacts):
     shutil.copy2(image / 'share/applications/com.nuvio.media.desktop.desktop', source / 'com.nuvio.media.desktop.desktop')
     shutil.copy2(image / 'share/icons/hicolor/512x512/apps/com.nuvio.media.desktop.png', source / 'com.nuvio.media.desktop.png')
     requires = '\n'.join('Requires: ' + name for name in RPM_REQUIRES)
-    # Private libraries are resolved through the image's own RUNPATH and must not
-    # shadow (provide) or require the distribution's same-SONAME packages.
-    private = private_sonames(image)
-    private_exclude = ''
-    if private:
-        pattern = '^(?:' + '|'.join(re.escape(name) for name in sorted(private)) + r')(\(|$)'
-        private_exclude = ('%global __provides_exclude_from ^/opt/nuvio-desktop/lib/(native|runtime)/.*$\n'
-                           '%global __requires_exclude ' + pattern + '\n')
+    requires += '\n' + '\n'.join('Requires: ' + name + '()(64bit)' for name in host_soname_requires(image))
+    requires += '\nRequires: /bin/sh'
+    # Automatic dependency generation is off. The pinned builder's rpm 4.17 ignores
+    # __requires_exclude for ELF-generated dependencies, so its automatic scan would
+    # demand the distribution provide sonames the package resolves through its own
+    # RUNPATH (the private media in lib/native) or carries itself (the bundled JDK).
+    # The curated list above names exactly what the image needs from the host, in
+    # soname form, mirroring the DEB control file's curated Depends.
+    private_exclude = '%global __provides_exclude_from ^/opt/nuvio-desktop/lib/(native|runtime)/.*$\n'
     spec = top / 'SPECS/nuvio-desktop.spec'
     spec.write_text(f'''%global debug_package %{{nil}}
 %global __os_install_post %{{nil}}
@@ -146,7 +193,8 @@ BuildArch: x86_64
 {requires}
 Recommends: ffmpeg
 Recommends: mesa-vulkan-drivers
-AutoReqProv: yes
+AutoReq: no
+AutoProv: no
 
 %description
 Integrated desktop media player with a private libmpv. Native executable;

@@ -234,7 +234,19 @@ jobs:
               test -s /opt/nuvio-desktop/lib/native/libplayer_bridge.so
               test -s /opt/nuvio-desktop/lib/native/libmpv.so.2
             '
-          echo "RPM Fedora install smoke test PASSED"
+          echo "RPM Fedora 41 install smoke test PASSED"
+          # Current Fedora too: its library sonames drift ahead of the pinned 41,
+          # which is what a fresh install on a user's machine resolves against.
+          podman run --rm --network=host --userns=keep-id --security-opt label=disable \
+            --mount "type=bind,src=$PWD/build/linux-packaging/artifacts,dst=/rpms,ro" \
+            registry.fedoraproject.org/fedora:latest bash -c '
+              set -euo pipefail
+              dnf -y --setopt=install_weak_deps=False install /rpms/*.rpm
+              rpm --verify nuvio-desktop
+              test -x /usr/bin/nuvio-desktop
+              test -x /opt/nuvio-desktop/lib/nuvio
+            '
+          echo "RPM current-Fedora install smoke test PASSED"
       - name: Smoke-install DEB on Ubuntu 22.04
         id: deb_smoke
         if: ${{ !cancelled() && env.BOOTSTRAP_ONLY != 'true' && steps.deb.outcome == 'success' }}

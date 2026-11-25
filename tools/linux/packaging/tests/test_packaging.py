@@ -191,17 +191,23 @@ class PackagingContractTest(unittest.TestCase):
                 (built / 'nuvio-desktop-1.41.0-1.x86_64.rpm').write_bytes(b'rpm fixture')
 
             with patch.object(formats, 'run', side_effect=fake_run), \
-                    patch.object(formats, 'private_sonames', return_value={'libmpv.so.2', 'libwayland-client.so.0'}):
+                    patch.object(formats, 'host_soname_requires', return_value=['libgtk-3.so.0', 'libasound.so.2']):
                 formats.build_rpm(work, image, info, artifacts)
             spec = (work / 'rpmbuild/SPECS/nuvio-desktop.spec').read_text()
             self.assertIn('Name: nuvio-desktop', spec)
             self.assertIn('Version: 1.41.0+git.aaaaaaaaaaaa', spec)
-            self.assertIn('AutoReqProv: yes', spec)
+            self.assertIn('AutoReq: no', spec)
             self.assertIn('ln -s /opt/nuvio-desktop/bin/nuvio-desktop', spec)
             self.assertIn('Recommends: mesa-vulkan-drivers', spec)
             self.assertIn('%global __provides_exclude_from ^/opt/nuvio-desktop/lib/(native|runtime)/.*$', spec)
-            self.assertIn('libmpv\\.so\\.2', spec)
-            self.assertIn('libwayland\\-client\\.so\\.0', spec)
+            # The pinned builder's rpm 4.17 ignores __requires_exclude for ELF deps, so the
+            # automatic scan is off and the host sonames are curated onto the Requires list.
+            self.assertIn('AutoReq: no', spec)
+            self.assertIn('AutoProv: no', spec)
+            self.assertIn('Requires: libgtk-3.so.0()(64bit)', spec)
+            self.assertIn('Requires: libasound.so.2()(64bit)', spec)
+            self.assertIn('Requires: /bin/sh', spec)
+            self.assertNotIn('__requires_exclude', spec)
             self.assertEqual(['rpmbuild'], [c[0][0] for c in calls])
             self.assertEqual('1700000000', calls[0][1]['env']['SOURCE_DATE_EPOCH'])
             self.assertTrue((image / 'bin/nuvio-desktop').is_file())
