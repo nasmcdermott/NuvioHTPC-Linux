@@ -51,6 +51,7 @@ import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Groups
@@ -776,6 +777,32 @@ private fun settingsSearchEntries(
                 pageLabel = sportsPage,
                 section = row.sectionOverride ?: sportsPage,
                 icon = Icons.Rounded.EmojiEvents,
+            )
+        }
+    }
+    // fork:vpn-bind — Linux desktop only (see AppFeaturePolicy.vpnBindEnabled).
+    if (AppFeaturePolicy.vpnBindEnabled) {
+        val vpnBindPage = resolve(Res.string.vpn_bind_settings_page)
+        addPage(
+            page = SettingsPage.VpnBind,
+            key = "vpn",
+            title = vpnBindPage,
+            description = "Bind the app's traffic to a VPN interface, failing closed instead of leaking",
+            icon = Icons.Rounded.Shield,
+        )
+        listOf(
+            PlaybackSearchRow("vpn-bind-mode", "Protection mode", "Off, Streams, Streams and P2P, or Full app — all fail closed.", vpnBindPage),
+            PlaybackSearchRow("vpn-bind-profiles", "Profiles on this system", "Every VPN profile NetworkManager and /etc/wireguard can see, activatable from here.", vpnBindPage),
+            PlaybackSearchRow("vpn-bind-health", "Bind health", "Whether the kernel accepts the bind, and whether the tunnel is verified.", vpnBindPage),
+        ).forEach { row ->
+            addRow(
+                page = SettingsPage.VpnBind,
+                key = row.key,
+                title = row.title,
+                description = row.description,
+                pageLabel = vpnBindPage,
+                section = row.sectionOverride ?: vpnBindPage,
+                icon = Icons.Rounded.Shield,
             )
         }
     }
@@ -3103,6 +3130,7 @@ private fun settingsSearchEntries(
         }
         if (!notificationsEnabled) add(SettingsPage.Notifications)
         if (!AppFeaturePolicy.sportsEnabled) add(SettingsPage.Sports) // fork:sports
+        if (!AppFeaturePolicy.vpnBindEnabled) add(SettingsPage.VpnBind) // fork:vpn-bind
         if (!isDesktop) {
             add(SettingsPage.KeyboardShortcuts)
             add(SettingsPage.Screensaver)

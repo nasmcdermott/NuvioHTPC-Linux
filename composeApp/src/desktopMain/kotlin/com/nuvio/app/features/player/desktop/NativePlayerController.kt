@@ -432,6 +432,9 @@ internal class NativePlayerController(
                 // Live TV: reconnect options and, with an IPTV proxy set, the local relay. Before the
                 // user's options so an mpv.conf can still override them.
                 addAll(com.nuvio.app.features.iptv.iptvMpvOptions(sourceUrl))
+                // VPN bind (fork:linux): a protected remote source leaves through the bound relay;
+                // loopback sources (the engine's stream server) stay direct.
+                com.nuvio.app.features.vpn.vpnBindMpvProxyOption(sourceUrl)?.let(::add)
                 // A Nuvio option like the rest: Replace lets a custom network-timeout override it,
                 // Add keeps this one, and Full (the user's own configuration only) never gets it.
                 if (PlayerSettingsRepository.uiState.value.desktopMpvConfigMode != DesktopMpvConfigMode.Full) {

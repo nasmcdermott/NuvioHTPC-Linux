@@ -1,5 +1,6 @@
 package com.nuvio.app.features.iptv
 
+import com.nuvio.app.features.vpn.VpnBindController
 import java.io.File
 
 /** How long mpv waits on a silent IPTV connection before FFmpeg reconnects or the open fails. */
@@ -53,7 +54,14 @@ internal fun iptvMpvOptions(sourceUrl: String): List<String> {
         add("force-seekable=yes")
         add("demuxer-seekable-cache=yes")
         add("sub-lavc-o=txt_format=text")
-        if (settings.proxy.enabled) add("http-proxy=${IptvProxyRelay.mpvProxyUrl()}")
+        // The bind (fork:linux) takes precedence over the user IPTV proxy: through the bind relay
+        // the stream's sockets are device-bound and fail closed. Chaining the two relays is not
+        // built yet; the settings UI warns about the combination.
+        if (VpnBindController.state().mode != VpnBindController.Mode.OFF) {
+            VpnBindController.relayProxyUrl()?.let { add("http-proxy=$it") }
+        } else if (settings.proxy.enabled) {
+            add("http-proxy=${IptvProxyRelay.mpvProxyUrl()}")
+        }
     }
 }
 

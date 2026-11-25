@@ -1,6 +1,8 @@
 package com.nuvio.app.features.iptv
 
 import com.nuvio.app.core.network.DesktopIPv4FirstDns
+import com.nuvio.app.features.vpn.VpnBindHttp
+import com.nuvio.app.features.vpn.VpnBindProxySelector
 import java.io.IOException
 import java.io.InputStream
 import java.net.Authenticator
@@ -30,11 +32,32 @@ private val iptvHttpClient = OkHttpClient.Builder()
 /** The client for the current [IptvProxy]; rebuilt only when the setting changes. */
 internal object IptvProxiedClients {
     private var cachedFor: IptvProxy? = null
+    private var cachedBindAuthorization: String? = null
     private var cached: OkHttpClient = iptvHttpClient
 
     @Synchronized
     fun clientFor(proxy: IptvProxy): OkHttpClient {
-        if (!proxy.enabled) return iptvHttpClient
+        // VPN bind (fork:linux): with no user IPTV proxy, plain traffic rides the fail-closed
+        // relay (loopback targets stay direct via the selector). A user IPTV proxy and the bind
+        // cannot chain yet — the user's explicit proxy keeps precedence there, and the settings
+        // UI warns about the combination.
+        if (!proxy.enabled) {
+            val bindProxy = VpnBindHttp.relayProxy() ?: return iptvHttpClient
+            val bindAuthorization = VpnBindHttp.relayProxyAuthorization()
+            if (proxy == cachedFor && bindAuthorization == cachedBindAuthorization) return cached
+            val builder = iptvHttpClient.newBuilder()
+                .proxySelector(VpnBindProxySelector(bindProxy))
+            if (bindAuthorization != null) {
+                builder.proxyAuthenticator { _, response ->
+                    if (response.request.header("Proxy-Authorization") != null) null
+                    else response.request.newBuilder().header("Proxy-Authorization", bindAuthorization).build()
+                }
+            }
+            cached = builder.build()
+            cachedFor = proxy
+            cachedBindAuthorization = bindAuthorization
+            return cached
+        }
         if (proxy == cachedFor) return cached
         val builder = iptvHttpClient.newBuilder()
         when (proxy.type) {

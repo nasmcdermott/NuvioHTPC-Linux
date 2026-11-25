@@ -4154,6 +4154,8 @@
     <string name="settings_confident_search_threshold_description">How far ahead of other titles with the same name a match must be, by popularity. 100% only opens a title with no namesake.</string>
     <!-- IPTV (Live TV). Based on Slokker's GoatTV. -->
     <string name="iptv_settings_page">Live TV</string>
+    <!-- fork:vpn-bind. -->
+    <string name="vpn_bind_settings_page">VPN</string>
     <string name="iptv_settings_description">Your IPTV provider's channels and programme guide, from an Xtream login or an M3U link.</string>
     <string name="iptv_settings_section_playlists">Playlists</string>
     <string name="iptv_settings_section_updates">Updates</string>

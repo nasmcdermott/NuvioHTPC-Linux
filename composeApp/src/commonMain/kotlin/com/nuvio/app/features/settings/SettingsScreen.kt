@@ -90,6 +90,7 @@ import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.LiveTv
+import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.Explore
@@ -1381,6 +1382,7 @@ private fun MobileSettingsScreen(
                     settings = gameLibrarySettings,
                 )
                 SettingsPage.Iptv -> iptvSettingsContent(isTablet = false)
+                SettingsPage.VpnBind -> vpnBindSettingsContent(isTablet = false) // fork:vpn-bind
                 SettingsPage.Sports -> sportsSettingsContent(isTablet = false) // fork:sports
                 SettingsPage.Screensaver -> screensaverSettingsContent(
                     isTablet = false,
@@ -1445,6 +1447,8 @@ private fun SettingsPage.isEnabledByFeaturePolicy(): Boolean =
         SettingsPage.Downloads -> AppFeaturePolicy.downloadsEnabled
         // fork:sports - absent entirely from a build without the feature.
         SettingsPage.Sports -> AppFeaturePolicy.sportsEnabled
+        // fork:vpn-bind — Linux desktop only.
+        SettingsPage.VpnBind -> AppFeaturePolicy.vpnBindEnabled
         else -> true
     }
 
@@ -2359,6 +2363,7 @@ private fun TabletSettingsScreen(
                         settings = gameLibrarySettings,
                     )
                     SettingsPage.Iptv -> iptvSettingsContent(isTablet = true)
+                    SettingsPage.VpnBind -> vpnBindSettingsContent(isTablet = true) // fork:vpn-bind
                     SettingsPage.Sports -> sportsSettingsContent(isTablet = true) // fork:sports
                     SettingsPage.Screensaver -> screensaverSettingsContent(
                         isTablet = true,
@@ -2511,6 +2516,12 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         page = SettingsPage.Sports,
     ),
     DesktopSettingsSidebarItem(
+        // fork:vpn-bind - Settings > VPN in the sidebar; filtered out off-Linux by the same pass.
+        label = stringResource(Res.string.vpn_bind_settings_page),
+        icon = Icons.Rounded.Shield,
+        page = SettingsPage.VpnBind,
+    ),
+    DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_account),
         icon = Icons.Rounded.AccountCircle,
         page = SettingsPage.Account,
@@ -2614,6 +2625,7 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.Usenet -> SettingsPage.Usenet
     SettingsPage.Games -> SettingsPage.Games
     SettingsPage.Iptv -> SettingsPage.Iptv
+    SettingsPage.VpnBind -> SettingsPage.VpnBind // fork:vpn-bind
     SettingsPage.Sports -> SettingsPage.Sports // fork:sports
     SettingsPage.AutoDownloads -> SettingsPage.AutoDownloads
     SettingsPage.Downloads -> SettingsPage.AutoDownloads
@@ -3713,7 +3725,10 @@ private fun DesktopSettingsContextPanel(
                                         icon = Icons.Rounded.History,
                                         title = recent.query,
                                         subtitle = target?.let { stringResource(it.titleRes) }.orEmpty(),
-                                        modifier = Modifier.settingsBackOnly(backToPage),
+                                        modifier = Modifier.settingsNavItem(
+                                            onActivate = { onRecentSearchClick(recent.query) },
+                                            onBack = backToPage,
+                                        ),
                                         // Right-click forgets it, as it unpins a favourite.
                                         onSecondaryClick = { SettingsSearchHistoryRepository.remove(recent.query) },
                                         bounceOnFocus = true,
@@ -3753,6 +3768,12 @@ private fun DesktopFavoritesList(
             ReorderableItem(reorderableLazyListState, key = favorite.anchor) {
                 val target = runCatching { SettingsPage.valueOf(favorite.page) }.getOrNull()
                 val subtitle = target?.let { stringResource(it.titleRes) }.orEmpty()
+                val activate: () -> Unit = {
+                    if (target != null) {
+                        onPageChange(target)
+                        SettingsScrollAnchor.request(favorite.anchor)
+                    }
+                }
                 DesktopActionRow(
                     icon = Icons.Rounded.Star,
                     title = favorite.title,
@@ -3764,17 +3785,20 @@ private fun DesktopFavoritesList(
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                 },
                             )
-                            .settingsBackOnly(onBack)
+                            // The panel rows join the key funnels like every other settings stop:
+                            // arrows move, Select activates, Back returns to the content, and the
+                            // row registers so a Right from the page content lands somewhere alive.
+                            .settingsNavItem(
+                                onActivate = activate,
+                                onBack = onBack,
+                            )
                     },
                     onSecondaryClick = {
                         SettingsFavoritesRepository.remove(favorite.anchor)
                     },
                     bounceOnFocus = true,
                 ) {
-                    if (target != null) {
-                        onPageChange(target)
-                        SettingsScrollAnchor.request(favorite.anchor)
-                    }
+                    activate()
                 }
             }
         }

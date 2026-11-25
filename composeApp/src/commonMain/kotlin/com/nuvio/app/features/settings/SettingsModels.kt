@@ -23,6 +23,7 @@ import nuvio.composeapp.generated.resources.compose_settings_page_debrid
 import nuvio.composeapp.generated.resources.compose_settings_page_continue_watching
 import nuvio.composeapp.generated.resources.compose_settings_page_games
 import nuvio.composeapp.generated.resources.iptv_settings_page
+import nuvio.composeapp.generated.resources.vpn_bind_settings_page
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_integrations
 import nuvio.composeapp.generated.resources.compose_settings_page_keyboard_shortcuts
@@ -156,6 +157,12 @@ internal enum class SettingsPage(
     ),
     Iptv(
         titleRes = Res.string.iptv_settings_page,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
+    /** fork:vpn-bind — the fail-closed VPN bind (Linux desktop; gated by the feature policy). */
+    VpnBind(
+        titleRes = Res.string.vpn_bind_settings_page,
         category = SettingsCategory.General,
         parentPage = Root,
     ),

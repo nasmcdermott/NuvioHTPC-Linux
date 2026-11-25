@@ -1,5 +1,7 @@
 package com.nuvio.app.core.build
 
+import com.nuvio.app.features.player.desktop.DesktopHostOs
+
 actual object AppFeaturePolicy {
     actual val pluginsEnabled: Boolean = true
     actual val downloadsEnabled: Boolean = true
@@ -12,4 +14,6 @@ actual object AppFeaturePolicy {
     actual val customServerConnectionsEnabled: Boolean = true
     // fork:sports — always on: Sports is part of the normal build in this fork.
     actual val sportsEnabled: Boolean = true
+    // fork:vpn-bind — Linux only: the bind is native code in the Linux player bridge.
+    actual val vpnBindEnabled: Boolean = DesktopHostOs.current == DesktopHostOs.LINUX
 }

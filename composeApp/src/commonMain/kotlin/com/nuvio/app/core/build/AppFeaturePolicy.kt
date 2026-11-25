@@ -24,4 +24,7 @@ expect object AppFeaturePolicy {
      * parameter required.
      */
     val sportsEnabled: Boolean
+
+    /** fork:vpn-bind — the fail-closed VPN bind and its settings page (Linux desktop only). */
+    val vpnBindEnabled: Boolean
 }
