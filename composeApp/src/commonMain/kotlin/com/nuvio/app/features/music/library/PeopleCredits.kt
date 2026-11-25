@@ -138,6 +138,21 @@ internal fun creditPeople(credits: List<Credit>): List<CreditPerson> =
             .thenBy { it.name.lowercase() },
     )
 
+/** The one-line credit of track [track] (1 up, 0 = whole album): "Written by A, B · Produced by C", or null when neither is credited. */
+internal fun trackCreditLine(credits: List<Credit>, track: Int): String? {
+    val onTrack = credits.filter { it.track == track }
+    val writers = onTrack.filter { it.kind == CreditKind.Writer }.map { it.person }.distinct()
+    val producers = onTrack.filter { it.kind == CreditKind.Producer }.map { it.person }.distinct()
+    return listOfNotNull(
+        writers.takeIf { it.isNotEmpty() }?.let { "Written by ${it.take(3).joinToString(", ")}" },
+        producers.takeIf { it.isNotEmpty() }?.let { "Produced by ${it.take(3).joinToString(", ")}" },
+    ).joinToString(" · ").ifEmpty { null }
+}
+
+/** The people credited on track [track] (1 up): their own credits there, plus the album-wide ones (track 0). */
+internal fun peopleOnTrack(people: List<CreditPerson>, track: Int): List<CreditPerson> =
+    people.filter { it.wholeAlbum || track in it.tracks }
+
 /** How many people have each kind of credit. */
 internal fun creditCounts(people: List<CreditPerson>): Map<CreditKind, Int> =
     CreditKind.entries.associateWith { k -> people.count { k in it.kinds } }

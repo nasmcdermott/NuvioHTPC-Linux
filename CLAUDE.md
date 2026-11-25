@@ -41,6 +41,7 @@ these UI changes are in the merge and that they are fork-only, and let them deci
 
 - `composeApp/src/commonMain/**/features/music/MusicNowPlaying.kt` (symmetric three-panel stage, no moving UI; its `stageSongTitle` drops guest credits from the stage title, tested by `StageSongTitleTest`)
 - `composeApp/src/commonMain/**/features/music/NowPlayingLinerBox.kt`, `NowPlayingVisualiser.kt`, `NowPlayingBooklet.kt`
+- `composeApp/src/commonMain/**/features/music/NowPlayingCredits.kt` (the Credits pill in the lyric pane's top right corner and the credits deck it expands, over `library/PeopleCredits*.kt`'s MusicBrainz store; its key walk reads `event.navAction()` so rebinds and pad keys follow, tested by `NowPlayingCreditsPagesTest` and `NowPlayingCreditsDeckTest`)
 - `composeApp/src/commonMain/**/features/music/visualiser/**` (track map, visualiser styles, Beat Grid, Song Map)
 - `composeApp/src/desktopMain/**/features/music/TrackMapBook.desktop.kt` and the decode/track-map code in `MusicPlayerSurface.desktop.kt`
 - the Beat Grid's beat-tracking network: `composeApp/src/desktopMain/**/features/music/visualiser/BeatTracker.desktop.kt`, `composeApp/src/desktopMain/resources/beat-tracking/**` (Beat This! models, MIT), `licenses/beat-this-MIT.txt`, the `beat-tracking/**` entry in `externalDesktopResources` in `composeApp/build.gradle.kts`, and `OnnxRuntimeNatives` being `internal` (not `private`) in `HeroBackdropFramer.desktop.kt` so the tracker can share it

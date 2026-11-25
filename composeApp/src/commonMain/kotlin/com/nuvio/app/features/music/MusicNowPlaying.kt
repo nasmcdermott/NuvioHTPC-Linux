@@ -519,19 +519,30 @@ private fun MusicNowPlayingScreen(
                         horizontalAlignment = if (centredMiddle) Alignment.CenterHorizontally else Alignment.Start,
                     ) {
                     val lyricsPane: @Composable (Modifier) -> Unit = { paneModifier ->
-                        LyricsPane(
-                            shownLyrics, state.positionMs, state.isPlaying, onSeek, reduced,
-                            paneModifier,
-                            style = lyricStyle,
-                            syncState = syncState,
-                            onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
-                            onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
-                            onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
-                            centredSync = centredMiddle,
-                            visible = lyricsOn,
-                            showSync = false,
-                            tapState = lyricTap,
-                        )
+                        // fork:credits-stage - the Credits pill in the lyric pane's top right corner, and the deck it expands.
+                        NowPlayingCreditsPane(
+                            album = album,
+                            artist = album?.artists?.firstOrNull()?.name,
+                            playingVideoId = track?.videoId,
+                            reduced = reduced,
+                            onOpenAlbum = { id -> onClose(); onOpenAlbum(id) },
+                            onJumpToTrack = { index -> player.jumpTo(index) },
+                            modifier = paneModifier,
+                        ) { inner ->
+                            LyricsPane(
+                                shownLyrics, state.positionMs, state.isPlaying, onSeek, reduced,
+                                inner,
+                                style = lyricStyle,
+                                syncState = syncState,
+                                onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
+                                onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
+                                onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
+                                centredSync = centredMiddle,
+                                visible = lyricsOn,
+                                showSync = false,
+                                tapState = lyricTap,
+                            )
+                        }
                     }
                     // With a video: the picture as large as the column's width allows, the lyrics in the room left under it.
                     if (realVideo) VideoAndLyrics(lyricsOn, lyricsPane) else lyricsPane(Modifier.weight(1f).fillMaxWidth())
@@ -588,18 +599,29 @@ private fun MusicNowPlayingScreen(
                     NowPlayingControls(state, player)
                     Spacer(Modifier.height(12.dp))
                     val lyricsPane: @Composable (Modifier) -> Unit = { paneModifier ->
-                        LyricsPane(
-                            shownLyrics, state.positionMs, state.isPlaying, onSeek, reduced,
-                            paneModifier,
-                            style = lyricStyle,
-                            syncState = syncState,
-                            onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
-                            onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
-                            onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
-                            visible = lyricsOn,
-                            showSync = false,
-                            tapState = lyricTap,
-                        )
+                        // fork:credits-stage - the Credits pill in the lyric pane's top right corner, and the deck it expands.
+                        NowPlayingCreditsPane(
+                            album = album,
+                            artist = album?.artists?.firstOrNull()?.name,
+                            playingVideoId = track?.videoId,
+                            reduced = reduced,
+                            onOpenAlbum = { id -> onClose(); onOpenAlbum(id) },
+                            onJumpToTrack = { index -> player.jumpTo(index) },
+                            modifier = paneModifier,
+                        ) { inner ->
+                            LyricsPane(
+                                shownLyrics, state.positionMs, state.isPlaying, onSeek, reduced,
+                                inner,
+                                style = lyricStyle,
+                                syncState = syncState,
+                                onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
+                                onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
+                                onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
+                                visible = lyricsOn,
+                                showSync = false,
+                                tapState = lyricTap,
+                            )
+                        }
                     }
                     // With a video: the picture as large as the column's width allows, the lyrics in the room left under it.
                     if (realVideo) VideoAndLyrics(lyricsOn, lyricsPane) else lyricsPane(Modifier.weight(1f).fillMaxWidth())
