@@ -577,6 +577,7 @@ let state = {
   voiceKeyCode: 0,
   playerShortcutKeyCodes: {},
   uiScalePercent: 0,
+  pauseUiScalePercent: 0,
   controlIconScalePercent: 0,
   uiFontFamily: "",
   sourceNotchPosition: "right",
@@ -1450,14 +1451,19 @@ function updateViewportUiScale() {
   // PiP's and the YouTube corner player's controls: the windowed player's floor (what the corner
   // player's small box comes to), not PiP's raw 0.5, so both are the same size on any display.
   const pipUiScale = userScale * Math.min(1, 0.5 * hostDisplayScale);
+  // fork:paused-ui-scale - the pause deck multiplies --user-scale by its own user offset
+  // (desktopPauseUiScalePercent), so the screen shown while paused can size independently of
+  // the live playback HUD. Same clamp as the main knob (±50%).
+  const pauseUiScale = combined * (1 + Math.max(-50, Math.min(50, Math.round(Number(state.pauseUiScalePercent) || 0))) / 100);
 
-  const signature = `${combined}|${panelScale}|${sourcePanelScale}|${feedbackScale}|${tier}|${pipUiScale}`;
+  const signature = `${combined}|${panelScale}|${sourcePanelScale}|${feedbackScale}|${tier}|${pipUiScale}|${pauseUiScale}`;
   if (signature === appliedScaleSignature) return;
   appliedScaleSignature = signature;
   appliedCombinedUserScale = combined;
 
   const rootStyle = document.documentElement.style;
   rootStyle.setProperty("--user-scale", String(combined));
+  rootStyle.setProperty("--pause-scale", String(pauseUiScale));
   rootStyle.setProperty("--pip-ui-scale", String(pipUiScale));
   rootStyle.setProperty("--panel-scale", String(panelScale));
   rootStyle.setProperty("--source-panel-scale", String(sourcePanelScale));

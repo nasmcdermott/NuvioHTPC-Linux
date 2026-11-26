@@ -1939,9 +1939,11 @@
     <string name="settings_playback_desktop_verbose_mpv_logging_desc">Writes logs/mpv-verbose.log for troubleshooting.</string>
     <string name="settings_playback_seek_step">Seek Step</string>
     <string name="settings_playback_seek_step_description">How far the seek buttons, arrow keys, and double-tap gesture jump.</string>
-    <string name="settings_playback_ui_scale">Player UI Scale</string>
+    <string name="settings_playback_ui_scale">Playback UI Scale</string>
+    <string name="settings_playback_paused_ui_scale">Paused UI Scale</string>
+    <string name="settings_playback_paused_ui_scale_description">Resizes only the title deck shown while playback is paused, on top of Playback UI Scale.</string>
     <string name="settings_playback_control_icon_scale">Bottom Row Icon Scale</string>
-    <string name="settings_playback_control_icon_scale_description">Resizes only the play, seek, and action buttons on the bottom row, on top of Player UI Scale.</string>
+    <string name="settings_playback_control_icon_scale_description">Resizes only the play, seek, and action buttons on the bottom row, on top of Playback UI Scale.</string>
     <string name="settings_appearance_app_ui_scale">App UI Scale</string>
     <string name="settings_appearance_app_ui_scale_details">Also Apply to Details Screen</string>
     <string name="settings_appearance_app_ui_scale_details_description">Scale media details with the rest of the app. </string>

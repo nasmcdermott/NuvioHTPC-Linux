@@ -115,6 +115,9 @@ data class PlayerSettingsUiState(
     // Extra scale for just the bottom control row's buttons (transport + action icons), in percent
     // (-50..50) on top of desktopUiScalePercent; 0 = unchanged.
     val desktopControlIconScalePercent: Int = 0,
+    // fork:paused-ui-scale - extra scale for just the pause metadata deck, in percent (-50..50)
+    // on top of desktopUiScalePercent; 0 = the pause deck follows the playback HUD exactly.
+    val desktopPauseUiScalePercent: Int = 0,
     // How far the seek buttons / arrow-key shortcuts jump, in seconds.
     val seekStepSeconds: Int = DefaultSeekStepSeconds,
     val desktopSourceNotchPosition: DesktopSourceNotchPosition = DesktopSourceNotchPosition.Right,
@@ -339,6 +342,7 @@ object PlayerSettingsRepository {
     private var desktopVerboseMpvLoggingEnabled = false
     private var desktopUiScalePercent = 0
     private var desktopControlIconScalePercent = 0
+    private var desktopPauseUiScalePercent = 0
     private var seekStepSeconds = DefaultSeekStepSeconds
     private var desktopSourceNotchPosition = DesktopSourceNotchPosition.Right
     private var desktopSourceNotchHoverEnabled = true
@@ -502,6 +506,7 @@ object PlayerSettingsRepository {
         desktopVerboseMpvLoggingEnabled = false
         desktopUiScalePercent = 0
         desktopControlIconScalePercent = 0
+        desktopPauseUiScalePercent = 0
         seekStepSeconds = DefaultSeekStepSeconds
         desktopSourceNotchPosition = DesktopSourceNotchPosition.Right
         desktopSourceNotchHoverEnabled = true
@@ -701,6 +706,8 @@ object PlayerSettingsRepository {
         desktopUiScalePercent = (PlayerSettingsStorage.loadDesktopUiScalePercent() ?: 0).coerceIn(-50, 50)
         desktopControlIconScalePercent =
             (PlayerSettingsStorage.loadDesktopControlIconScalePercent() ?: 0).coerceIn(-50, 50)
+        desktopPauseUiScalePercent =
+            (PlayerSettingsStorage.loadDesktopPauseUiScalePercent() ?: 0).coerceIn(-50, 50)
         seekStepSeconds = (PlayerSettingsStorage.loadSeekStepSeconds() ?: DefaultSeekStepSeconds)
             .coerceIn(SEEK_STEP_SECONDS_RANGE.first, SEEK_STEP_SECONDS_RANGE.last)
         desktopSourceNotchPosition = DesktopSourceNotchPosition.fromStorage(
@@ -1181,6 +1188,15 @@ object PlayerSettingsRepository {
         desktopControlIconScalePercent = clamped
         publish()
         PlayerSettingsStorage.saveDesktopControlIconScalePercent(clamped)
+    }
+
+    fun setDesktopPauseUiScalePercent(percent: Int) {
+        ensureLoaded()
+        val clamped = percent.coerceIn(-50, 50)
+        if (desktopPauseUiScalePercent == clamped) return
+        desktopPauseUiScalePercent = clamped
+        publish()
+        PlayerSettingsStorage.saveDesktopPauseUiScalePercent(clamped)
     }
 
     fun setSeekStepSeconds(seconds: Int) {
@@ -1949,6 +1965,7 @@ object PlayerSettingsRepository {
             desktopVerboseMpvLoggingEnabled = desktopVerboseMpvLoggingEnabled,
             desktopUiScalePercent = desktopUiScalePercent,
             desktopControlIconScalePercent = desktopControlIconScalePercent,
+            desktopPauseUiScalePercent = desktopPauseUiScalePercent,
             seekStepSeconds = seekStepSeconds,
             desktopSourceNotchPosition = desktopSourceNotchPosition,
             desktopSourceNotchHoverEnabled = desktopSourceNotchHoverEnabled,

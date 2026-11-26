@@ -19,6 +19,11 @@
    * grid-centered with no viewport-coordinate JS, so they use `zoom` (safe there — grid centering
    * accounts for the zoomed size) to scale the whole panel and its contents in one rule. */
   --user-scale: 1;
+  /* fork:paused-ui-scale - the pause metadata deck's own multiplier (desktopPauseUiScalePercent
+   * setting, -50%..+50%) applied on top of --user-scale, so the screen shown while paused can
+   * size independently of the live playback HUD. Set from JS next to --user-scale; 1 = follow
+   * the playback UI exactly (the pre-fork behaviour). */
+  --pause-scale: var(--user-scale);
   /* Bottom control row only (desktopControlIconScalePercent setting, -50%..+50%), set from JS
    * (applyControlIconScale in controls.js). Multiplies the transport buttons and the action-row
    * glyphs/padding on top of --user-scale; nothing else reads it. 1 = no change. */
@@ -1875,6 +1880,15 @@ button svg * {
   opacity: 0;
   pointer-events: none;
   transition: opacity 180ms ease;
+}
+
+/* fork:opening-overlay-no-shimmer - the loading screen's skeleton shimmer sweeps wide white
+ * bands over a near-black fullscreen backdrop and reads as vertical streak artifacts before
+ * the artwork ever loads. The poster thumbs keep theirs; only the opening overlay drops it,
+ * and only on the Linux host.
+ */
+.linux-host .opening-overlay::before {
+  display: none;
 }
 
 .opening-overlay.visible {
@@ -5174,34 +5188,34 @@ svg {
 
 .pause-status-pill {
   align-self: flex-start;
-  margin-top: calc(var(--user-scale) * 24px);
+  margin-top: calc(var(--pause-scale) * 24px);
   display: inline-flex;
   align-items: center;
-  gap: calc(var(--user-scale) * 14px);
-  padding: calc(var(--user-scale) * 10px) calc(var(--user-scale) * 20px);
+  gap: calc(var(--pause-scale) * 14px);
+  padding: calc(var(--pause-scale) * 10px) calc(var(--pause-scale) * 20px);
   border-radius: 999px;
   background: rgba(8, 8, 10, .52);
   border: 1px solid rgba(255, 255, 255, .15);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 calc(var(--user-scale) * 8px) calc(var(--user-scale) * 24px) rgba(0, 0, 0, .35);
+  box-shadow: 0 calc(var(--pause-scale) * 8px) calc(var(--pause-scale) * 24px) rgba(0, 0, 0, .35);
 }
 .pause-status-icon {
   display: inline-flex;
   align-items: center;
-  gap: calc(var(--user-scale) * 4px);
+  gap: calc(var(--pause-scale) * 4px);
   flex: 0 0 auto;
 }
 .pause-status-icon span {
   display: block;
-  width: calc(var(--user-scale) * 4px);
-  height: calc(var(--user-scale) * 14px);
-  border-radius: calc(var(--user-scale) * 1.5px);
+  width: calc(var(--pause-scale) * 4px);
+  height: calc(var(--pause-scale) * 14px);
+  border-radius: calc(var(--pause-scale) * 1.5px);
   background: rgba(255, 255, 255, .92);
 }
 .pause-status-label {
   color: rgba(255, 255, 255, .62);
-  font-size: calc(var(--user-scale) * 17px);
+  font-size: calc(var(--pause-scale) * 17px);
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -5209,40 +5223,40 @@ svg {
 }
 .pause-status-divider {
   width: 1px;
-  height: calc(var(--user-scale) * 20px);
+  height: calc(var(--pause-scale) * 20px);
   background: rgba(255, 255, 255, .20);
   flex: 0 0 auto;
 }
 .pause-status-time {
   color: #fff;
-  font-size: calc(var(--user-scale) * 21px);
+  font-size: calc(var(--pause-scale) * 21px);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 .pause-status-duration {
   color: rgba(255, 255, 255, .50);
-  font-size: calc(var(--user-scale) * 19px);
+  font-size: calc(var(--pause-scale) * 19px);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  margin-left: calc(var(--user-scale) * -6px);
+  margin-left: calc(var(--pause-scale) * -6px);
 }
 
 .pause-metadata-content {
   padding:
-    calc(var(--user-scale) * 48px)
-    calc(var(--hp) + env(safe-area-inset-right) + calc(var(--user-scale) * 48px))
-    calc(var(--user-scale) * 32px)
-    calc(var(--hp) + env(safe-area-inset-left) + calc(var(--user-scale) * 48px));
+    calc(var(--pause-scale) * 48px)
+    calc(var(--hp) + env(safe-area-inset-right) + calc(var(--pause-scale) * 48px))
+    calc(var(--pause-scale) * 32px)
+    calc(var(--hp) + env(safe-area-inset-left) + calc(var(--pause-scale) * 48px));
 }
 .pause-kicker {
-  gap: calc(var(--user-scale) * 14px);
-  font-size: calc(var(--user-scale) * 20px);
+  gap: calc(var(--pause-scale) * 14px);
+  font-size: calc(var(--pause-scale) * 20px);
 }
 .pause-kicker::before {
-  width: calc(var(--user-scale) * 30px);
-  height: calc(var(--user-scale) * 2.5px);
+  width: calc(var(--pause-scale) * 30px);
+  height: calc(var(--pause-scale) * 2.5px);
 }
 
 /* Edge-to-edge bottom cast dock (E2a):
@@ -5254,12 +5268,12 @@ svg {
   flex: 0 0 auto;
   display: flex;
   align-items: stretch;
-  gap: calc(var(--user-scale) * 22px);
+  gap: calc(var(--pause-scale) * 22px);
   margin: 0;
   padding:
-    calc(var(--user-scale) * 22px)
-    calc(var(--hp) + env(safe-area-inset-right) + calc(var(--user-scale) * 36px))
-    calc(var(--user-scale) * 24px)
+    calc(var(--pause-scale) * 22px)
+    calc(var(--hp) + env(safe-area-inset-right) + calc(var(--pause-scale) * 36px))
+    calc(var(--pause-scale) * 24px)
     env(safe-area-inset-left);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, 0) 40%),
@@ -5267,7 +5281,7 @@ svg {
   border-top: 1px solid rgba(255, 255, 255, .12);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  box-shadow: 0 calc(var(--user-scale) * -12px) calc(var(--user-scale) * 40px) rgba(0, 0, 0, .42);
+  box-shadow: 0 calc(var(--pause-scale) * -12px) calc(var(--pause-scale) * 40px) rgba(0, 0, 0, .42);
 }
 .pause-cast[hidden] { display: none; }
 .pause-progress-track {
@@ -5275,7 +5289,7 @@ svg {
   left: 0;
   right: 0;
   top: -1px;
-  height: calc(var(--user-scale) * 3.5px);
+  height: calc(var(--pause-scale) * 3.5px);
   background: rgba(255, 255, 255, .10);
   pointer-events: none;
 }
@@ -5286,7 +5300,7 @@ svg {
 }
 .pause-cast-spine {
   flex: 0 0 auto;
-  width: calc(var(--hp) + calc(var(--user-scale) * 68px));
+  width: calc(var(--hp) + calc(var(--pause-scale) * 68px));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5297,7 +5311,7 @@ svg {
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   color: rgba(255, 255, 255, .62);
-  font-size: calc(var(--user-scale) * 18px);
+  font-size: calc(var(--pause-scale) * 18px);
   line-height: 1;
   font-weight: 600;
   letter-spacing: 0.34em;
@@ -5312,7 +5326,7 @@ svg {
   padding: 0;
   display: flex;
   align-items: stretch;
-  gap: calc(var(--user-scale) * 16px);
+  gap: calc(var(--pause-scale) * 16px);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -5320,14 +5334,14 @@ svg {
 .pause-cast-member {
   position: relative;
   flex: 1 1 0;
-  min-width: calc(var(--user-scale) * 144px);
-  max-width: calc(var(--user-scale) * 224px);
-  height: calc(var(--user-scale) * 228px);
-  border-radius: calc(var(--user-scale) * 12px);
+  min-width: calc(var(--pause-scale) * 144px);
+  max-width: calc(var(--pause-scale) * 224px);
+  height: calc(var(--pause-scale) * 228px);
+  border-radius: calc(var(--pause-scale) * 12px);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, .15);
   background: rgba(255, 255, 255, .06);
-  box-shadow: 0 calc(var(--user-scale) * 6px) calc(var(--user-scale) * 18px) rgba(0, 0, 0, .35);
+  box-shadow: 0 calc(var(--pause-scale) * 6px) calc(var(--pause-scale) * 18px) rgba(0, 0, 0, .35);
 }
 .pause-cast-photo {
   display: grid;
@@ -5338,7 +5352,7 @@ svg {
   object-position: center 20%;
   background: linear-gradient(160deg, rgba(255, 255, 255, .12), rgba(255, 255, 255, .04));
   color: rgba(255, 255, 255, .72);
-  font-size: calc(var(--user-scale) * 34px);
+  font-size: calc(var(--pause-scale) * 34px);
   font-weight: 600;
 }
 .pause-cast-text {
@@ -5350,9 +5364,9 @@ svg {
   flex-direction: column;
   min-width: 0;
   padding:
-    calc(var(--user-scale) * 44px)
-    calc(var(--user-scale) * 12px)
-    calc(var(--user-scale) * 11px);
+    calc(var(--pause-scale) * 44px)
+    calc(var(--pause-scale) * 12px)
+    calc(var(--pause-scale) * 11px);
   background: linear-gradient(
     180deg,
     rgba(0, 0, 0, 0) 0%,
@@ -5368,42 +5382,42 @@ svg {
 }
 .pause-cast-name {
   color: #fff;
-  font-size: calc(var(--user-scale) * 16px);
+  font-size: calc(var(--pause-scale) * 16px);
   line-height: 1.25;
   font-weight: 600;
 }
 .pause-cast-role {
-  margin-top: calc(var(--user-scale) * 2px);
+  margin-top: calc(var(--pause-scale) * 2px);
   color: rgba(255, 255, 255, .68);
-  font-size: calc(var(--user-scale) * 13px);
+  font-size: calc(var(--pause-scale) * 13px);
   line-height: 1.25;
 }
 .pause-logo {
-  width: min(calc(var(--user-scale) * 768px), 68vw);
-  height: calc(var(--user-scale) * 202px);
+  width: min(calc(var(--pause-scale) * 768px), 68vw);
+  height: calc(var(--pause-scale) * 202px);
   margin-top: 0;
 }
 .pause-title {
   margin-top: 0;
-  font-size: max(calc(var(--title) * 2.88), calc(var(--user-scale) * 65px));
+  font-size: max(calc(var(--title) * 2.88), calc(var(--pause-scale) * 65px));
 }
 .pause-episode-line {
-  column-gap: calc(var(--user-scale) * 14px);
-  row-gap: calc(var(--user-scale) * 5px);
-  margin-top: calc(var(--user-scale) * 22px);
-  font-size: calc(var(--user-scale) * 31px);
+  column-gap: calc(var(--pause-scale) * 14px);
+  row-gap: calc(var(--pause-scale) * 5px);
+  margin-top: calc(var(--pause-scale) * 22px);
+  font-size: calc(var(--pause-scale) * 31px);
 }
 .pause-description {
-  width: min(calc(var(--user-scale) * 1060px), 62vw);
-  margin-top: calc(var(--user-scale) * 16px);
-  font-size: calc(var(--user-scale) * 24px);
-  line-height: calc(var(--user-scale) * 34px);
+  width: min(calc(var(--pause-scale) * 1060px), 62vw);
+  margin-top: calc(var(--pause-scale) * 16px);
+  font-size: calc(var(--pause-scale) * 24px);
+  line-height: calc(var(--pause-scale) * 34px);
 }
 .pause-source {
-  width: min(calc(var(--user-scale) * 1060px), 62vw);
-  gap: calc(var(--user-scale) * 8px);
-  margin-top: calc(var(--user-scale) * 16px);
-  font-size: calc(var(--user-scale) * 18px);
+  width: min(calc(var(--pause-scale) * 1060px), 62vw);
+  gap: calc(var(--pause-scale) * 8px);
+  margin-top: calc(var(--pause-scale) * 16px);
+  font-size: calc(var(--pause-scale) * 18px);
 }
 
 /* .side-control never got a scaled box, so it kept the flat 48x48 from the desktop transport
@@ -5759,13 +5773,13 @@ svg {
 
 /* Final responsive overrides that must follow the compact PiP and episode-rail rules above. */
 @media (max-height: 419px) {
-  .pause-metadata-content { padding-top: calc(var(--user-scale) * 24px); }
+  .pause-metadata-content { padding-top: calc(var(--pause-scale) * 24px); }
   .pause-cast,
   .pause-status-pill { display: none; }
 }
 @media (max-height: 339px) {
-  .pause-metadata-content { padding-bottom: calc(var(--user-scale) * 24px); }
-  .pause-logo { height: calc(var(--user-scale) * 48px); }
+  .pause-metadata-content { padding-bottom: calc(var(--pause-scale) * 24px); }
+  .pause-logo { height: calc(var(--pause-scale) * 48px); }
 }
 
 .pip-exit-button,

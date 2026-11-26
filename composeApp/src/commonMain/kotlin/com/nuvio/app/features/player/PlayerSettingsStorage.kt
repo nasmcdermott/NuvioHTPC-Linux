@@ -57,6 +57,8 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopUiScalePercent(percent: Int)
     fun loadDesktopControlIconScalePercent(): Int?
     fun saveDesktopControlIconScalePercent(percent: Int)
+    fun loadDesktopPauseUiScalePercent(): Int?
+    fun saveDesktopPauseUiScalePercent(percent: Int)
     fun loadSeekStepSeconds(): Int?
     fun saveSeekStepSeconds(seconds: Int)
     fun loadDesktopSourceNotchPosition(): String?

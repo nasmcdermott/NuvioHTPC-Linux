@@ -46,6 +46,7 @@ internal actual object PlayerSettingsStorage {
     private const val desktopVerboseMpvLoggingEnabledKey = "desktop_verbose_mpv_logging_enabled"
     private const val desktopUiScalePercentKey = "desktop_ui_scale_percent"
     private const val desktopControlIconScalePercentKey = "desktop_control_icon_scale_percent"
+    private const val desktopPauseUiScalePercentKey = "desktop_pause_ui_scale_percent"
     private const val desktopSourceNotchPositionKey = "desktop_source_notch_position"
     private const val desktopSourceNotchHoverEnabledKey = "desktop_source_notch_hover_enabled"
     private const val desktopPlayerNotificationPositionKey =
@@ -358,6 +359,9 @@ internal actual object PlayerSettingsStorage {
     actual fun loadDesktopControlIconScalePercent(): Int? = loadInt(desktopControlIconScalePercentKey)
     actual fun saveDesktopControlIconScalePercent(percent: Int) =
         saveInt(desktopControlIconScalePercentKey, percent)
+    actual fun loadDesktopPauseUiScalePercent(): Int? = loadInt(desktopPauseUiScalePercentKey)
+    actual fun saveDesktopPauseUiScalePercent(percent: Int) =
+        saveInt(desktopPauseUiScalePercentKey, percent)
     actual fun loadSeekStepSeconds(): Int? = loadInt(seekStepSecondsKey)
     actual fun saveSeekStepSeconds(seconds: Int) = saveInt(seekStepSecondsKey, seconds)
     actual fun loadDesktopSourceNotchPosition(): String? = loadString(desktopSourceNotchPositionKey)

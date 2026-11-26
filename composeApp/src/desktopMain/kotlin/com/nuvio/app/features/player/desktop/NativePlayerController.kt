@@ -4089,6 +4089,8 @@ internal fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("controlIconScalePercent", hud.controlIconScalePercent)
         append(',')
+        appendJsonField("pauseUiScalePercent", hud.pauseUiScalePercent)
+        append(',')
         appendJsonField("uiFontFamily", hud.uiFontFamily)
         append(',')
         appendJsonField("sourceNotchPosition", hud.sourceNotchPosition)

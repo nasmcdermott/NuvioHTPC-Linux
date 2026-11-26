@@ -904,6 +904,21 @@ private fun PlaybackSettingsSection(
                             onValueChange = PlayerSettingsRepository::setDesktopControlIconScalePercent,
                         )
                         SettingsGroupDivider(isTablet = isTablet)
+                        // fork:paused-ui-scale - the pause deck scales independently of the live
+                        // playback HUD; 0 follows the Playback UI Scale exactly.
+                        val pausedUiScalePercent = autoPlayPlayerSettings.desktopPauseUiScalePercent
+                        SettingsSliderRow(
+                            title = stringResource(Res.string.settings_playback_paused_ui_scale),
+                            description = stringResource(Res.string.settings_playback_paused_ui_scale_description),
+                            value = pausedUiScalePercent,
+                            valueText = "${if (pausedUiScalePercent > 0) "+" else ""}$pausedUiScalePercent%",
+                            valueTextForValue = { "${if (it > 0) "+" else ""}$it%" },
+                            valueRange = -50..50,
+                            step = 5,
+                            isTablet = isTablet,
+                            onValueChange = PlayerSettingsRepository::setDesktopPauseUiScalePercent,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
                     }
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_playback_show_loading_overlay),

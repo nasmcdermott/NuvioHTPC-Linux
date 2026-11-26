@@ -517,6 +517,8 @@ data class PlayerHudSettings(
     val uiScalePercent: Int = 0,
     // Extra scale for the bottom control row's buttons only, on top of uiScalePercent.
     val controlIconScalePercent: Int = 0,
+    // fork:paused-ui-scale - extra scale for the pause metadata deck only, on top of uiScalePercent.
+    val pauseUiScalePercent: Int = 0,
     // The app font, as a CSS family name. "" leaves the HUD on the bundled JetBrains Sans.
     val uiFontFamily: String = "",
     val sourceNotchPosition: String = "right",
