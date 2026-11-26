@@ -60,6 +60,9 @@ internal actual fun ImageLoader.Builder.configurePlatformImageLoader(): ImageLoa
 internal actual fun ComponentRegistry.Builder.addPlatformSvgDecoders() {
     // Takes only SVGs that contain an <image>; every other SVG still goes to SvgDecoder.
     add(SvgEmbeddedImageDecoder.Factory())
+    // Takes only Illustrator-export SVGs whose artwork hides behind a <switch>/<foreignObject>
+    // extension test; the stock decoder renders those as a fully transparent bitmap.
+    add(SvgSwitchFallbackDecoder.Factory())
 }
 
 /**

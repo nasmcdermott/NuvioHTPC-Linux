@@ -30,6 +30,7 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onSizeChanged
 import com.nuvio.app.core.ui.accentGradientStops
 import com.nuvio.app.core.ui.copyPlainTextToClipboard
+import com.nuvio.app.core.ui.openingOverlayCachedSource
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.ui.NuvioToastPlacement
 import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
@@ -591,6 +592,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             playbackSpeedToggleHigh = playerSettingsUiState.playbackSpeedToggleHigh,
             uiScalePercent = playerSettingsUiState.desktopUiScalePercent,
             controlIconScalePercent = playerSettingsUiState.desktopControlIconScalePercent,
+            pauseUiScalePercent = playerSettingsUiState.desktopPauseUiScalePercent,
             uiFontFamily = MaterialTheme.appFontFamilyName,
             sourceNotchPosition = playerSettingsUiState.desktopSourceNotchPosition.name.lowercase(),
             sourceNotchHoverEnabled = playerSettingsUiState.desktopSourceNotchHoverEnabled,
@@ -783,8 +785,13 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         sourcesPanelOpen = showSourcesPanel,
         opening = PlayerOpeningOverlayState(
             showOpeningOverlay = openingOverlayWanted,
-            openingArtwork = background ?: poster,
-            openingLogo = logo,
+            // fork:opening-artwork-from-disk-cache - hand the HUD file:// sources for artwork the
+            // pipeline already has on disk, so the loading screen paints image and logo at once
+            // instead of re-downloading them through WebKit's own network stack.
+            openingArtwork = remember(background, poster) {
+                openingOverlayCachedSource(background ?: poster)
+            },
+            openingLogo = remember(logo) { openingOverlayCachedSource(logo) },
             openingTitle = title,
             openingMessage = p2pInitialLoadingMessage,
             openingProgress = p2pInitialLoadingProgress,

@@ -134,7 +134,7 @@ private fun fit(iw: Float, ih: Float, x: Float, y: Float, w: Float, h: Float, pr
     return Rect.makeXYWH(x + ox, y + oy, fw, fh)
 }
 
-private fun attr(tag: String, name: String): String? {
+internal fun attr(tag: String, name: String): String? {
     val match = Regex("(?<![\\w:-])${Regex.escape(name)}\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')").find(tag) ?: return null
     return match.groupValues[1].ifEmpty { match.groupValues[2] }
 }

@@ -3,6 +3,7 @@ package com.nuvio.app
 import androidx.compose.ui.draw.clip
 import com.nuvio.app.core.ui.NuvioGlass
 import com.nuvio.app.core.ui.accentFill
+import com.nuvio.app.core.ui.prefetchOpeningArtwork
 import com.nuvio.app.features.settings.settingsGlassGlyph
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.graphics.graphicsLayer
@@ -2913,6 +2914,10 @@ private fun MainAppContent(
                 )
 
             PlaybackStartTrace.beginPending("playClicked type=$type id=$videoId")
+
+            // fork:opening-artwork-prefetch - stream resolution takes a second or two; spend it
+            // fetching the backdrop and logo so a first-time title still opens with its artwork.
+            prefetchOpeningArtwork(logo = logo, poster = poster, background = background)
 
             // Read the repository at the moment of the click. A details destination can outlive the
             // composition that created its callbacks; using its captured UI snapshot meant changing

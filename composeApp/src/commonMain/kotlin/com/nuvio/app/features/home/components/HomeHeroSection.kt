@@ -506,10 +506,22 @@ fun HomeHeroSection(
         }
         val displayCurrentItem = focusedItem ?: currentItem
         val castCache = remember { mutableStateMapOf<String, List<HeroCastMember>>() }
+        // fork:hero-logo-from-details-meta - catalog rows whose addon ships no logo fell straight
+        // to the title text even when the title's own details meta carries one. Filled by the
+        // same warm pass as the ratings: the display item plus the neighbours within reach, each
+        // peeking the cached meta first and fetching only when nothing is in hand.
+        val heroLogoCache = remember { mutableStateMapOf<String, String>() }
         val displayItemsWithCast = displayItems.map { item ->
             val cachedCast = castCache["${item.type}:${item.id}"]
                 ?: HeroCastMetadataService.peek(type = item.type, id = item.id)
-            item.copy(cast = cachedCast?.takeIf { it.isNotEmpty() } ?: item.cast)
+            // fork:hero-logo-from-details-meta - a row whose addon ships no logo takes the one
+            // its details meta carries, so the hero stops falling back to the title text.
+            val cachedLogo = heroLogoCache["${item.type}:${item.id}"]
+            item.copy(
+                cast = cachedCast?.takeIf { it.isNotEmpty() } ?: item.cast,
+                logo = item.logo?.takeIf { it.isNotBlank() }
+                    ?: cachedLogo?.takeIf { it.isNotBlank() },
+            )
         }
         val displayCurrentItemWithCast = displayItemsWithCast.firstOrNull { item ->
             item.type == displayCurrentItem.type && item.id == displayCurrentItem.id
@@ -654,6 +666,25 @@ fun HomeHeroSection(
                         )
                         keywordsCache[key] = enriched.mdblistKeywords
                         ratingsCache[key] = enriched.externalRatings
+                    }
+                }
+            }
+            for (target in metadataTargets) {
+                val key = "${target.type}:${target.id}"
+                if (!target.logo.isNullOrBlank() || heroLogoCache.containsKey(key) || target.isOffCatalogHeroItem()) continue
+                launchOnce("logo:$key") {
+                    prefetchSlots.withPermit {
+                        val found = MetaDetailsRepository.peek(type = target.metadataType, id = target.metadataId)?.logo
+                            ?: MetaDetailsRepository.peekAny(type = target.metadataType, id = target.metadataId)?.logo
+                            ?: runCatching {
+                                MetaDetailsRepository.fetch(type = target.metadataType, id = target.metadataId)?.logo
+                            }.getOrNull()
+                        val resolved = found?.trim()?.takeIf { it.isNotBlank() } ?: ""
+                        heroLogoCache[key] = resolved
+                        // Cloud rows resolve to a different metadata identity than their row id;
+                        // store under both so the item-copy pass can find the logo either way.
+                        val metaKey = "${target.metadataType}:${target.metadataId}"
+                        if (metaKey != key) heroLogoCache[metaKey] = resolved
                     }
                 }
             }
