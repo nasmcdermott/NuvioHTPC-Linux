@@ -85,6 +85,7 @@ import com.nuvio.app.features.streams.StreamScorer
 import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.streams.isSelectableForPlayback
 import com.nuvio.app.features.tonight.TonightSettingsRepository
+import com.nuvio.app.features.trailer.YouTubeSearchHit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -275,9 +276,26 @@ internal fun SportsGameDetail(
     val channelMainRequesters = remember { HashMap<Int, FocusRequester>() }
     fun channelBand(idx: Int): FocusRequester = channelBandRequesters.getOrPut(idx) { FocusRequester() }
     fun channelMain(idx: Int): FocusRequester = channelMainRequesters.getOrPut(idx) { FocusRequester() }
+    val highlightBandRequesters = remember(event.id) { HashMap<Int, FocusRequester>() }
+    val highlightMainRequesters = remember(event.id) { HashMap<Int, FocusRequester>() }
+    fun highlightBand(idx: Int): FocusRequester = highlightBandRequesters.getOrPut(idx) { FocusRequester() }
+    fun highlightMain(idx: Int): FocusRequester = highlightMainRequesters.getOrPut(idx) { FocusRequester() }
 
     val bestOption = if (event.state == GameState.POST) null else visibleOptions.firstOrNull() ?: allOptions.firstOrNull()
     val replayOption = visibleOptions.firstOrNull { it.canCatchup } ?: allOptions.firstOrNull { it.canCatchup }
+
+    // fork:game-highlights - a finished game's official YouTube highlights sit at the top of the
+    // replay group, alongside any IPTV catch-up channels the user's playlists offer. Null while
+    // the search is in flight, empty when nothing official was found (the page stays as it was).
+    val wantHighlights = event.state == GameState.POST
+    var youtubeHighlights by remember(event.id) { mutableStateOf<List<YouTubeSearchHit>?>(null) }
+    LaunchedEffect(event.id, wantHighlights) {
+        if (!wantHighlights) {
+            youtubeHighlights = null
+        } else {
+            youtubeHighlights = SportsYouTubeHighlights.highlights(event, league)
+        }
+    }
     val isFieldEvent = event.away.team.id.endsWith(":event")
     val hasPrimaryWatchAction = (bestOption != null && event.state != GameState.POST) ||
         (replayOption != null && event.state == GameState.POST)
@@ -306,7 +324,10 @@ internal fun SportsGameDetail(
     }
     val hasPlayByPlayControl = !hideScores && playPeriodGroups.isNotEmpty()
     // Items 0..3 are header, scoreboard, actions and channels-header; channel rows start at index 4.
-    val firstChannelLazyIndex = 4
+    // fork:game-highlights - the highlight rows are lazy items of their own between the channels
+    // header and the channel rows, so every index below them moves by their count.
+    val highlightRows = if (event.state == GameState.POST) youtubeHighlights.orEmpty() else emptyList()
+    val firstChannelLazyIndex = 4 + highlightRows.size
     // The play-by-play toggle sits at the top of the plays/stats card, after the channel rows (or the
     // empty-channel card) and the optional "other regions" toggle.
     val statsLazyIndex = firstChannelLazyIndex +
@@ -505,6 +526,9 @@ internal fun SportsGameDetail(
                             onUp = { scrollAndFocus(2, actionsBandFocus, FocusDirection.Up) },
                             onDown = {
                                 when {
+                                    // fork:game-highlights - highlights sit at the top of the replay
+                                    // group, so Down from the header reaches them first.
+                                    highlightRows.isNotEmpty() -> scrollAndFocus(4, highlightBand(0))
                                     visibleOptions.isNotEmpty() ->
                                         scrollAndFocus(firstChannelLazyIndex, channelBand(0))
                                     iptvSettings.playlists.isNotEmpty() ->
@@ -519,7 +543,11 @@ internal fun SportsGameDetail(
                 ) {
                     Text(
                         text = when {
-                            event.state == GameState.POST -> if (allOptions.isEmpty()) "Replay unavailable" else "Replay options (${visibleOptions.size})"
+                            event.state == GameState.POST -> when {
+                                allOptions.isEmpty() && highlightRows.isNotEmpty() -> "Official YouTube highlights"
+                                allOptions.isEmpty() -> "Replay unavailable"
+                                else -> "Replay options (${visibleOptions.size + highlightRows.size})"
+                            }
                             allOptions.isEmpty() -> "Watch on your channels"
                             allOptions.size == 1 -> "On your channels"
                             else -> "Watch on your channels (${visibleOptions.size})"
@@ -560,18 +588,62 @@ internal fun SportsGameDetail(
             }
         }
 
+        // fork:game-highlights - the official YouTube highlight uploads at the top of the replay
+        // group, above any IPTV catch-up channels. Each row plays like a channel row: Enter
+        // resolves the video on the device and opens the player.
+        highlightRows.forEachIndexed { index, hit ->
+            item(key = "highlight:$index") {
+                SportsYouTubeHighlightRow(
+                    hit = hit,
+                    bandRequester = highlightBand(index),
+                    mainRequester = highlightMain(index),
+                    onUp = {
+                        if (index == 0) {
+                            if (stepStatsUpIfScrolled(4)) true
+                            else scrollAndFocus(3, channelsHeaderBandFocus, FocusDirection.Up)
+                        } else {
+                            runCatching { highlightBand(index - 1).requestFocusLogged() }.getOrDefault(false)
+                        }
+                    },
+                    onDown = {
+                        when {
+                            index < highlightRows.lastIndex ->
+                                runCatching { highlightBand(index + 1).requestFocusLogged() }.getOrDefault(false)
+                            visibleOptions.isNotEmpty() ->
+                                scrollAndFocus(firstChannelLazyIndex, channelBand(0))
+                            iptvSettings.playlists.isNotEmpty() ->
+                                scrollAndFocus(firstChannelLazyIndex, emptyPickFocus)
+                            else -> stepStatsDown()
+                        }
+                    },
+                    onClick = {
+                        onPlaySportsStream(SportsYouTubeHighlights.streamItem(league, event, hit))
+                    },
+                )
+            }
+        }
+
         if (visibleOptions.isEmpty()) {
             item(key = "channels-empty") {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(
+                            // fork:game-highlights - the highlight rows live in their own items
+                            // above, so Up from the card walks back into the last of them.
                             if (iptvSettings.playlists.isNotEmpty()) {
                                 Modifier.sportsHorizontalBand(
                                     bandRequester = emptyPickFocus,
                                     onUp = {
-                                        if (stepStatsUpIfScrolled(firstChannelLazyIndex)) true
-                                        else scrollAndFocus(3, channelsHeaderBandFocus, FocusDirection.Up)
+                                        when {
+                                            stepStatsUpIfScrolled(firstChannelLazyIndex) -> true
+                                            highlightRows.isNotEmpty() -> scrollAndFocus(
+                                                firstChannelLazyIndex - 1,
+                                                highlightBand(highlightRows.lastIndex),
+                                                FocusDirection.Up,
+                                            )
+                                            else -> scrollAndFocus(3, channelsHeaderBandFocus, FocusDirection.Up)
+                                        }
                                     },
                                     onDown = { stepStatsDown() },
                                 )
@@ -634,7 +706,13 @@ internal fun SportsGameDetail(
                         if (index == visibleOptions.lastIndex && !showOtherRegionsToggle && stepStatsUpIfScrolled(lazyIdx)) {
                             true
                         } else if (index == 0) {
-                            scrollAndFocus(3, channelsHeaderBandFocus, FocusDirection.Up)
+                            // fork:game-highlights - the highlight rows sit above the channel rows,
+                            // so Up from the first channel lands on the last of them.
+                            if (highlightRows.isNotEmpty()) {
+                                scrollAndFocus(firstChannelLazyIndex - 1, highlightBand(highlightRows.lastIndex), FocusDirection.Up)
+                            } else {
+                                scrollAndFocus(3, channelsHeaderBandFocus, FocusDirection.Up)
+                            }
                         } else {
                             scrollAndFocus(lazyIdx - 1, channelBand(index - 1), FocusDirection.Up)
                         }

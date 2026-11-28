@@ -15,6 +15,8 @@ data class YouTubeSearchHit(
     val verified: Boolean,
     val durationSeconds: Int,
     val views: Long,
+    /** fork:game-highlights - YouTube's own relative age ("2 days ago"); blank when it sent none. */
+    val publishedText: String = "",
 )
 
 /**
@@ -184,8 +186,28 @@ private fun JsonObject.toSearchHit(): YouTubeSearchHit? {
         verified = verified,
         durationSeconds = parseDurationSeconds(textOf(this["lengthText"])),
         views = parseViewCount(textOf(this["viewCountText"])),
+        publishedText = textOf(this["publishedTimeText"]),
     )
 }
+
+/**
+ * fork:game-highlights - "2 days ago", "Streamed 6 months ago" to a rough age in milliseconds;
+ * null when [text] says no age at all (live, premieres, a layout change). Months read 30.44 days
+ * and years 365.25, which is all YouTube's own wording is good for.
+ */
+internal fun parsePublishedAgeMs(text: String): Long? {
+    val match = Regex("(\\d+)\\s+(second|minute|hour|day|week|month|year)s?\\s+ago").find(text.lowercase()) ?: return null
+    val amount = match.groupValues[1].toLongOrNull() ?: return null
+    val unitMs = when (match.groupValues[2]) {
+        "second" -> 1_000L
+        "minute" -> 60_000L
+        "hour" -> 3_600_000L
+        "day" -> 86_400_000L
+        "week" -> 7 * 86_400_000L
+        "month" -> (30.44 * 86_400_000L).toLong()
+        else -> (365.25 * 86_400_000L).toLong()
+    }
+    return amount * unitMs}
 
 /** Text of an InnerTube text node: either `simpleText`, or `runs` to be joined. */
 private fun textOf(node: JsonElement?): String {

@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class TrailerQualityTest {
     private fun hit(
@@ -141,6 +142,20 @@ class TrailerQualityTest {
         assertEquals(0, parseDurationSeconds("LIVE"))
         assertEquals(1_234L, parseViewCount("1,234 views"))
         assertEquals(0L, parseViewCount("No views"))
+    }
+
+    @Test
+    fun parsesPublishedAgesForTheGameDayFilter() {
+        assertEquals(3_600_000L, parsePublishedAgeMs("1 hour ago"))
+        assertEquals(2 * 86_400_000L, parsePublishedAgeMs("2 days ago"))
+        assertEquals(2 * 86_400_000L, parsePublishedAgeMs("Streamed 2 days ago"))
+        // Months and years read calendar-rounded values; only the ballpark matters for a cutoff.
+        val months = parsePublishedAgeMs("2 months ago")!!
+        assertTrue(months in 58L * 86_400_000L..62L * 86_400_000L)
+        val years = parsePublishedAgeMs("5 years ago")!!
+        assertTrue(years in 1_820L * 86_400_000L..1_830L * 86_400_000L)
+        assertNull(parsePublishedAgeMs(""))
+        assertNull(parsePublishedAgeMs("Premiered tomorrow"))
     }
 
     @Test
