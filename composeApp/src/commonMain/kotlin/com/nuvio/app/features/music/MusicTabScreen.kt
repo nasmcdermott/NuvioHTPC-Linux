@@ -153,7 +153,7 @@ internal object MusicTabState {
      */
     var submitted by mutableStateOf("")
 
-    /** Puts [text] in the box and searches it now. */
+    /** Puts [text] in the box and searches it now (the bar's box keeps showing the query). */
     fun search(text: String) {
         typed = text
         submitted = text.trim()

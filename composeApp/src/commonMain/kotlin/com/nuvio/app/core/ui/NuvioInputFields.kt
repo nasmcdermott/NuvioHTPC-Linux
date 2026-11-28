@@ -95,6 +95,7 @@ import org.jetbrains.compose.resources.stringResource
 
 private val FieldShape = NuvioGlass.Shape
 private val FieldMinHeight = 46.dp
+private val CompactFieldMinHeight = 38.dp
 private val FieldIconButtonSize = 32.dp
 private val StepperHeight = 38.dp
 private val StepperButtonWidth = 34.dp
@@ -139,6 +140,8 @@ fun NuvioTextField(
     shape: Shape = FieldShape,
     /** Minimum height. The header search sits in a 46dp icon row, so it passes a smaller one. */
     minHeight: Dp = FieldMinHeight,
+    /** Button height (38dp) instead of 46dp, for a single-line field sitting in a row with a settings button. */
+    compact: Boolean = false,
 ) {
     val tokens = MaterialTheme.nuvio
     var focused by remember { mutableStateOf(false) }
@@ -223,7 +226,11 @@ fun NuvioTextField(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = minHeight)
+                .heightIn(
+                    // An explicit minHeight wins; otherwise compact rows use the button height.
+                    min = if (minHeight != FieldMinHeight) minHeight
+                    else if (compact) CompactFieldMinHeight else FieldMinHeight,
+                )
                 // The glass fill under the focus tint (which is clear while unfocused).
                 .ditheredBackground(NuvioGlass.Fill, shape)
                 .background(containerBrush, shape)
@@ -245,7 +252,7 @@ fun NuvioTextField(
         ) {
             leadingContent?.invoke(this)
             Box(
-                modifier = Modifier.weight(1f).padding(vertical = NuvioTokens.Space.s12),
+                modifier = Modifier.weight(1f).padding(vertical = if (compact) NuvioTokens.Space.s8 else NuvioTokens.Space.s12),
                 contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart,
             ) {
                 if (value.isEmpty() && !placeholder.isNullOrBlank()) {

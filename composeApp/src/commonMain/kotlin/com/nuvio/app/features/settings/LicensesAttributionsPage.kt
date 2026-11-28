@@ -1,5 +1,8 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.ui.draw.clip
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.DrawableResource
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import com.nuvio.app.core.ui.nuvio
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -61,7 +65,7 @@ private const val KitsuUrl = "https://kitsu.app"
 private const val AnimeMappingUrl = "https://github.com/Fribb/anime-lists"
 private const val NuvioRepositoryUrl = "https://github.com/NuvioMedia/NuvioDesktop"
 private const val HtpcContributorsUrl = "https://github.com/UmbraProjects/NuvioDesktop/graphs/contributors"
-private const val NuvioContributeUrl = "https://tapframe.space/contribute"
+private const val NuvioContributeUrl = "https://nuvio.tv/support"
 private const val MpvUrl = "https://mpv.io"
 private const val FfmpegUrl = "https://ffmpeg.org"
 private const val Msys2PackagesUrl = "https://packages.msys2.org"
@@ -95,6 +99,11 @@ private data class AttributionItem(
     val logo: IntegrationLogo?,
     val logoUrl: String? = null,
     val logoText: String? = null,
+    /**
+     * The site's own icon (its favicon or app icon), bundled so it shows offline and no host can block it. GitHub's
+     * mark stands in for projects that live on GitHub without a logo of their own (2026-11-23).
+     */
+    val logoRes: DrawableResource? = null,
     val link: String,
 )
 
@@ -273,6 +282,15 @@ private fun AttributionRow(
                     )
                 }
             }
+            item.logoRes != null -> item.logoRes.let { res ->
+                {
+                    SiteIconImage(
+                        painter = painterResource(res),
+                        contentDescription = title,
+                        isTablet = isTablet,
+                    )
+                }
+            }
             item.logoUrl != null -> item.logoUrl.let { logoUrl ->
                 {
                     ProviderLogoImage(
@@ -432,6 +450,33 @@ private fun ProviderLogoImage(
     )
 }
 
+/**
+ * A site icon in the logo slot: a little smaller than the slot and rounded, so square app icons, round marks and
+ * transparent favicons sit together as one set instead of each filling the slot its own way.
+ */
+@Composable
+private fun SiteIconImage(
+    painter: Painter,
+    contentDescription: String,
+    isTablet: Boolean,
+) {
+    Box(
+        modifier = Modifier
+            .padding(top = 2.dp)
+            .size(if (isTablet) 46.dp else 40.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painter,
+            contentDescription = contentDescription,
+            modifier = Modifier
+                .size(if (isTablet) 38.dp else 34.dp)
+                .clip(RoundedCornerShape(if (isTablet) 9.dp else 8.dp)),
+            contentScale = ContentScale.Fit,
+        )
+    }
+}
+
 @Composable
 private fun ProviderLogoTextBadge(
     text: String,
@@ -509,6 +554,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_skipdb_title,
         bodyRes = Res.string.settings_licenses_attributions_skipdb_body,
         logo = null,
+        logoRes = Res.drawable.attribution_skipdb,
         logoText = "SkipDB",
         link = SkipDbUrl,
     ),
@@ -545,6 +591,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_anime_mapping_title,
         bodyRes = Res.string.settings_licenses_attributions_anime_mapping_body,
         logo = null,
+        logoRes = Res.drawable.attribution_github,
         logoText = "ODbL",
         link = AnimeMappingUrl,
     ),
@@ -553,6 +600,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_imdb_title,
         bodyRes = Res.string.settings_licenses_attributions_imdb_body,
         logo = null,
+        logoRes = Res.drawable.attribution_imdb,
         link = ImdbDatasetsUrl,
     ),
     AttributionItem(
@@ -560,6 +608,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_sponsorblock_title,
         bodyRes = Res.string.settings_licenses_attributions_sponsorblock_body,
         logo = null,
+        logoRes = Res.drawable.attribution_sponsorblock,
         logoText = "SB",
         link = SponsorBlockUrl,
     ),
@@ -568,6 +617,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_ryd_title,
         bodyRes = Res.string.settings_licenses_attributions_ryd_body,
         logo = null,
+        logoRes = Res.drawable.attribution_ryd,
         logoText = "RYD",
         link = ReturnYouTubeDislikeUrl,
     ),
@@ -576,6 +626,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_wikipedia_title,
         bodyRes = Res.string.settings_licenses_attributions_wikipedia_body,
         logo = null,
+        logoRes = Res.drawable.attribution_wikipedia,
         logoText = "W",
         link = WikipediaUrl,
     ),
@@ -584,6 +635,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_lyrics_title,
         bodyRes = Res.string.settings_licenses_attributions_lyrics_body,
         logo = null,
+        logoRes = Res.drawable.attribution_lrclib,
         logoText = "LRC",
         link = LrclibUrl,
     ),
@@ -592,6 +644,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_musicbrainz_title,
         bodyRes = Res.string.settings_licenses_attributions_musicbrainz_body,
         logo = null,
+        logoRes = Res.drawable.attribution_musicbrainz,
         logoText = "MB",
         link = MusicBrainzUrl,
     ),
@@ -600,6 +653,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_music_metadata_title,
         bodyRes = Res.string.settings_licenses_attributions_music_metadata_body,
         logo = null,
+        logoRes = Res.drawable.attribution_theaudiodb,
         logoText = "Music",
         link = TheAudioDbUrl,
     ),
@@ -608,6 +662,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_fanart_title,
         bodyRes = Res.string.settings_licenses_attributions_fanart_body,
         logo = null,
+        logoRes = Res.drawable.attribution_fanart,
         logoText = "fanart",
         link = FanartTvUrl,
     ),
@@ -616,6 +671,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_games_title,
         bodyRes = Res.string.settings_licenses_attributions_games_body,
         logo = null,
+        logoRes = Res.drawable.attribution_igdb,
         logoText = "IGDB",
         link = IgdbUrl,
     ),
@@ -624,6 +680,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_anilist_title,
         bodyRes = Res.string.settings_licenses_attributions_anilist_body,
         logo = null,
+        logoRes = Res.drawable.attribution_anilist,
         logoText = "AniList",
         link = AniListUrl,
     ),
@@ -632,6 +689,7 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_aniskip_title,
         bodyRes = Res.string.settings_licenses_attributions_aniskip_body,
         logo = null,
+        logoRes = Res.drawable.attribution_aniskip,
         logoText = "Skip",
         link = AniSkipUrl,
     ),
@@ -660,6 +718,7 @@ private fun projectAttributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_eclipse_title,
         bodyRes = Res.string.settings_licenses_attributions_eclipse_body,
         logo = null,
+        logoRes = Res.drawable.attribution_eclipse,
         logoText = "Eclipse",
         link = EclipseMusicUrl,
     ),
@@ -668,6 +727,7 @@ private fun projectAttributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_goattv_title,
         bodyRes = Res.string.settings_licenses_attributions_goattv_body,
         logo = null,
+        logoRes = Res.drawable.attribution_goattv,
         logoText = "GoatTV",
         link = GoatTvUrl,
     ),
@@ -676,6 +736,7 @@ private fun projectAttributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_stremio_kai_title,
         bodyRes = Res.string.settings_licenses_attributions_stremio_kai_body,
         logo = null,
+        logoRes = Res.drawable.attribution_github,
         logoText = "Kai",
         link = StremioKaiUrl,
     ),
@@ -684,6 +745,7 @@ private fun projectAttributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_anime4k_title,
         bodyRes = Res.string.settings_licenses_attributions_anime4k_body,
         logo = null,
+        logoRes = Res.drawable.attribution_github,
         logoText = "MIT",
         link = Anime4kUrl,
     ),
@@ -692,6 +754,7 @@ private fun projectAttributionItems(): List<AttributionItem> = listOf(
         titleRes = Res.string.settings_licenses_attributions_trash_title,
         bodyRes = Res.string.settings_licenses_attributions_trash_body,
         logo = null,
+        logoRes = Res.drawable.attribution_trash_guides,
         logoText = "TRaSH",
         link = TrashGuidesUrl,
     ),
@@ -704,6 +767,7 @@ private fun htpcContributorsItem(): AttributionItem =
         titleRes = Res.string.settings_licenses_attributions_htpc_contributors_title,
         bodyRes = Res.string.settings_licenses_attributions_htpc_contributors_body,
         logo = null,
+        logoRes = Res.drawable.attribution_github,
         logoText = "HTPC",
         link = HtpcContributorsUrl,
     )

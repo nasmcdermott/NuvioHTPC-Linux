@@ -262,6 +262,17 @@ actual fun HeroTrailerPlayerSurface(
     val cropGateTimeoutMs = 3_000L
     var revealRequestedAt = 0L
 
+    // Black while parked at 1px, so the first frame after the reveal's resize is black rather than one pixel of the
+    // video stretched across the window; the picture comes back once the window is drawing at full size.
+    LaunchedEffect(controller, playbackRevealReady) {
+        if (!playbackRevealReady) {
+            controller.setParkedBlackout(true)
+        } else {
+            repeat(2) { androidx.compose.runtime.withFrameNanos { } }
+            controller.setParkedBlackout(false)
+        }
+    }
+
     LaunchedEffect(controller, sourceUrl, effectivePlayWhenReady) {
         var readyReported = false
         var endedReported = false
@@ -285,8 +296,14 @@ actual fun HeroTrailerPlayerSurface(
                 if (revealRequestedAt == 0L) revealRequestedAt = now
                 if (cropApplied || now - revealRequestedAt >= cropGateTimeoutMs) {
                     readyReported = true
-                    playbackRevealReady = true
+                    // The page's blackout first, then the trailer. The trailer is a heavyweight panel that
+                    // appears the moment it is revealed, while the blackout around it is a Compose frame
+                    // that came one or two frames later, so the surround visibly darkened after the
+                    // trailer was already up (2026-11-23). Two frames lets that blackout be on screen.
                     latestOnReady.value()
+                    androidx.compose.runtime.withFrameNanos { }
+                    androidx.compose.runtime.withFrameNanos { }
+                    playbackRevealReady = true
                 }
             }
             if (snapshot.isEnded && !endedReported) {

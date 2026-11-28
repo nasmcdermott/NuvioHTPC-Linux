@@ -65,16 +65,22 @@ fun HomeCollectionRowSection(
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
 ) {
     if (collection.folders.isEmpty()) return
+    val homeCatalogSettings by remember {
+        HomeCatalogSettingsRepository.snapshot()
+        HomeCatalogSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
+    val effectiveAnimateGifs = animateGifs && homeCatalogSettings.collectionFocusGifsEnabled
     val effectiveRowState = rowState ?: rememberLazyListState()
-    PrefetchCollectionArtwork(collection, animateGifs)
+    PrefetchCollectionArtwork(collection, effectiveAnimateGifs)
 
     if (sectionPadding != null) {
         HomeCollectionRowSectionContent(
             collection = collection,
+            homeCatalogSettings = homeCatalogSettings,
             modifier = modifier.fillMaxWidth(),
             sectionPadding = sectionPadding,
             basePosterWidthDpOverride = basePosterWidthDpOverride,
-            animateGifs = animateGifs,
+            animateGifs = effectiveAnimateGifs,
             focusedItemIndex = focusedItemIndex,
             rowState = effectiveRowState,
             onHoverItem = onHoverItem,
@@ -89,10 +95,11 @@ fun HomeCollectionRowSection(
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
             HomeCollectionRowSectionContent(
                 collection = collection,
+                homeCatalogSettings = homeCatalogSettings,
                 modifier = Modifier.fillMaxWidth(),
                 sectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value),
                 basePosterWidthDpOverride = basePosterWidthDpOverride,
-                animateGifs = animateGifs,
+                animateGifs = effectiveAnimateGifs,
                 focusedItemIndex = focusedItemIndex,
                 rowState = effectiveRowState,
                 onHoverItem = onHoverItem,
@@ -110,6 +117,7 @@ fun HomeCollectionRowSection(
 @Composable
 private fun HomeCollectionRowSectionContent(
     collection: Collection,
+    homeCatalogSettings: com.nuvio.app.features.home.HomeCatalogSettingsUiState,
     modifier: Modifier,
     sectionPadding: Dp,
     basePosterWidthDpOverride: Int?,
@@ -124,11 +132,6 @@ private fun HomeCollectionRowSectionContent(
     bodyModifier: Modifier,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)?,
 ) {
-    val homeCatalogSettings by remember {
-        HomeCatalogSettingsRepository.snapshot()
-        HomeCatalogSettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
-
     // Same "Trending • 3" suffix catalog rows get; a collection occupies a row slot too.
     val headerTitle = if (rowNumber != null && homeCatalogSettings.catalogRowNumbersEnabled) {
         "${collection.title} • $rowNumber"

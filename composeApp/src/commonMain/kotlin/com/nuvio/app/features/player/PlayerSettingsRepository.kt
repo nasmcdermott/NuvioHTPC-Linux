@@ -123,13 +123,16 @@ data class PlayerSettingsUiState(
     val desktopSourceNotchPosition: DesktopSourceNotchPosition = DesktopSourceNotchPosition.Right,
     // When false the notch only opens Sources on a click, so a pointer crossing that screen edge on
     // its way to another monitor no longer pulls the panel open.
-    val desktopSourceNotchHoverEnabled: Boolean = true,
+    val desktopSourceNotchHoverEnabled: Boolean = false,
     // Where the transient player pills (playback speed, volume, aspect ratio) are drawn.
     val desktopPlayerNotificationPosition: DesktopPlayerNotificationPosition =
-        DesktopPlayerNotificationPosition.Center,
+        DesktopPlayerNotificationPosition.TopCenter,
     val externalPlayerEnabled: Boolean = false,
     val externalPlayerForwardSubtitles: Boolean = false,
-    val externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId(),
+    // Null = whatever ExternalPlayerPlatform.defaultPlayerId() finds, worked out when a player is
+    // actually opened. Never probed here: the probe runs reg.exe, and this state is built while
+    // the window's first frame is composing.
+    val externalPlayerId: String? = null,
     val preferredAudioLanguage: String = AudioLanguageOption.DEVICE,
     val secondaryPreferredAudioLanguage: String? = null,
     val preferredSubtitleLanguage: String = SubtitleLanguageOption.DEVICE,
@@ -153,7 +156,7 @@ data class PlayerSettingsUiState(
     val streamPrefetchCacheMinutes: Int = STREAM_PREFETCH_DEFAULT_CACHE_MINUTES,
     val streamPrefetchResolveLinks: Boolean = true,
     val streamCwCacheEnabled: Boolean = true,
-    val preloadNextEpisodeSources: Boolean = false,
+    val preloadNextEpisodeSources: Boolean = true,
     val decoderPriority: Int = 1,
     val nvidiaRtxSuperResolutionEnabled: Boolean = false,
     val nvidiaRtxHdrEnabled: Boolean = false,
@@ -345,11 +348,11 @@ object PlayerSettingsRepository {
     private var desktopPauseUiScalePercent = 0
     private var seekStepSeconds = DefaultSeekStepSeconds
     private var desktopSourceNotchPosition = DesktopSourceNotchPosition.Right
-    private var desktopSourceNotchHoverEnabled = true
-    private var desktopPlayerNotificationPosition = DesktopPlayerNotificationPosition.Center
+    private var desktopSourceNotchHoverEnabled = false
+    private var desktopPlayerNotificationPosition = DesktopPlayerNotificationPosition.TopCenter
     private var externalPlayerEnabled = false
     private var externalPlayerForwardSubtitles = false
-    private var externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId()
+    private var externalPlayerId: String? = null
     private var preferredAudioLanguage = AudioLanguageOption.DEVICE
     private var secondaryPreferredAudioLanguage: String? = null
     private var preferredSubtitleLanguage = SubtitleLanguageOption.DEVICE
@@ -367,7 +370,7 @@ object PlayerSettingsRepository {
     private var streamPrefetchCacheMinutes = STREAM_PREFETCH_DEFAULT_CACHE_MINUTES
     private var streamPrefetchResolveLinks = true
     private var streamCwCacheEnabled = true
-    private var preloadNextEpisodeSources = false
+    private var preloadNextEpisodeSources = true
     private var decoderPriority = 1
     private var nvidiaRtxSuperResolutionEnabled = false
     private var nvidiaRtxHdrEnabled = false
@@ -509,11 +512,11 @@ object PlayerSettingsRepository {
         desktopPauseUiScalePercent = 0
         seekStepSeconds = DefaultSeekStepSeconds
         desktopSourceNotchPosition = DesktopSourceNotchPosition.Right
-        desktopSourceNotchHoverEnabled = true
-        desktopPlayerNotificationPosition = DesktopPlayerNotificationPosition.Center
+        desktopSourceNotchHoverEnabled = false
+        desktopPlayerNotificationPosition = DesktopPlayerNotificationPosition.TopCenter
         externalPlayerEnabled = false
         externalPlayerForwardSubtitles = false
-        externalPlayerId = ExternalPlayerPlatform.defaultPlayerId()
+        externalPlayerId = null
         preferredAudioLanguage = AudioLanguageOption.DEVICE
         secondaryPreferredAudioLanguage = null
         preferredSubtitleLanguage = SubtitleLanguageOption.DEVICE
@@ -531,7 +534,7 @@ object PlayerSettingsRepository {
         streamPrefetchCacheMinutes = STREAM_PREFETCH_DEFAULT_CACHE_MINUTES
         streamPrefetchResolveLinks = true
         streamCwCacheEnabled = true
-        preloadNextEpisodeSources = false
+        preloadNextEpisodeSources = true
         decoderPriority = 1
         nvidiaRtxSuperResolutionEnabled = false
         nvidiaRtxHdrEnabled = false
@@ -714,14 +717,14 @@ object PlayerSettingsRepository {
             PlayerSettingsStorage.loadDesktopSourceNotchPosition(),
         )
         desktopSourceNotchHoverEnabled =
-            PlayerSettingsStorage.loadDesktopSourceNotchHoverEnabled() ?: true
+            PlayerSettingsStorage.loadDesktopSourceNotchHoverEnabled() ?: false
         desktopPlayerNotificationPosition = DesktopPlayerNotificationPosition.fromStorage(
             PlayerSettingsStorage.loadDesktopPlayerNotificationPosition(),
         )
         externalPlayerEnabled = PlayerSettingsStorage.loadExternalPlayerEnabled() ?: false
         externalPlayerForwardSubtitles = PlayerSettingsStorage.loadExternalPlayerForwardSubtitles() ?: false
+        // No saved choice stays null (the default player, found when one is opened).
         externalPlayerId = PlayerSettingsStorage.loadExternalPlayerId()
-            ?: ExternalPlayerPlatform.defaultPlayerId()
         preferredAudioLanguage =
             normalizeLanguageCode(PlayerSettingsStorage.loadPreferredAudioLanguage())
                 ?: AudioLanguageOption.DEVICE
@@ -791,7 +794,7 @@ object PlayerSettingsRepository {
             ?: STREAM_PREFETCH_DEFAULT_CACHE_MINUTES
         streamPrefetchResolveLinks = PlayerSettingsStorage.loadStreamPrefetchResolveLinks() ?: true
         streamCwCacheEnabled = PlayerSettingsStorage.loadStreamCwCacheEnabled() ?: true
-        preloadNextEpisodeSources = PlayerSettingsStorage.loadPreloadNextEpisodeSources() ?: false
+        preloadNextEpisodeSources = PlayerSettingsStorage.loadPreloadNextEpisodeSources() ?: true
         streamReuseLastLinkCacheHours = PlayerSettingsStorage.loadStreamReuseLastLinkCacheHours() ?: 24
         decoderPriority = PlayerSettingsStorage.loadDecoderPriority() ?: 1
         nvidiaRtxSuperResolutionEnabled = PlayerSettingsStorage.loadNvidiaRtxSuperResolutionEnabled() ?: false
