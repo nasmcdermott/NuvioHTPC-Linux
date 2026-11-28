@@ -220,7 +220,12 @@ jobs:
           unset DISPLAY WAYLAND_DISPLAY NUVIO_RUN_LIVE_DISPLAY_TESTS
           rpms=(build/linux-packaging/artifacts/*.rpm)
           [[ ${#rpms[@]} -eq 1 && -s "${rpms[0]}" ]]
-          podman run --rm --network=host --userns=keep-id --security-opt label=disable \
+          # Rootful: the smoke installs the RPM, and dnf needs real root in the
+          # container — a rootless keep-id run is a non-root user and could never
+          # install (and jammy's podman 3.4 cannot even start one, dying with
+          # "filesystem error: cannot create directories: Permission denied
+          # [/.local/state]", which cost v1.46.0/v1.46.2/v1.47.0 their gates).
+          sudo podman run --rm --network=host --security-opt label=disable \
             --mount "type=bind,src=$PWD/build/linux-packaging/artifacts,dst=/rpms,ro" \
             registry.fedoraproject.org/fedora:41 bash -c '
               set -euo pipefail
@@ -237,7 +242,7 @@ jobs:
           echo "RPM Fedora 41 install smoke test PASSED"
           # Current Fedora too: its library sonames drift ahead of the pinned 41,
           # which is what a fresh install on a user's machine resolves against.
-          podman run --rm --network=host --userns=keep-id --security-opt label=disable \
+          sudo podman run --rm --network=host --security-opt label=disable \
             --mount "type=bind,src=$PWD/build/linux-packaging/artifacts,dst=/rpms,ro" \
             registry.fedoraproject.org/fedora:latest bash -c '
               set -euo pipefail
